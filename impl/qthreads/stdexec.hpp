@@ -1,3 +1,6 @@
+#ifndef STDEXX_QTHREADS_STDEXEC_H
+#define STDEXX_QTHREADS_STDEXEC_H
+
 #include <stdexec/execution.hpp>
 #include <stdio.h>
 
@@ -254,3 +257,5 @@ struct scheduler {
   }
 };
 } // namespace stdexx
+
+#endif
