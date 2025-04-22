@@ -1,10 +1,16 @@
 #std::execution with ULT backend (X)
 
-cmake_minimum_required(VERSION 3.17)
+cmake_minimum_required(VERSION 3.25)
 set(CMAKE_DISABLE_IN_SOURCE_BUILD ON)
 set(CMAKE_DISABLE_SOURCE_CHANGES ON)
 
-project(stdexx)
+set(CMAKE_C_STANDARD 23)
+set(CMAKE_CXX_STANDARD 26)
+set(BUILD_SHARED_LIBS ON CACHE BOOL "Build using shared libraries.")
+
+project(stdexx
+  VERSION 0.1
+  LANGUAGES C CXX)
 
 list(APPEND CMAKE_MODULE_PATH ${CMAKE_CURRENT_SOURCE_DIR}/modules)
 
@@ -41,8 +47,6 @@ list(LENGTH ULTs nULTs)
 if (NOT ${nULTs} EQUAL "1")
   message(FATAL_ERROR "Must give a single valid ULT backend. ${nULTs} given.")
 endif()
-
-add_compile_options(-std=c++20)
 
 find_package(stdexec REQUIRED)
 
