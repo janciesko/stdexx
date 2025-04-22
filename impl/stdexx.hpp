@@ -1,4 +1,4 @@
-//std::execution with ULT backend (X)
+// std::execution with ULT backend (X)
 
 #if defined(STDEXX_ENABLE_QTHREADS)
 #include <qthreads/stdexec.hpp>

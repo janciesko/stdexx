@@ -27,17 +27,19 @@
 template <class YType, class AType, class XType>
 void spmv(YType y, AType A, XType x) {
   KokkosSparse::CrsMatrix<
-      double, INT_TYPE,
-      Kokkos::Device<Kokkos::DefaultExecutionSpace,
-                     typename Kokkos::DefaultExecutionSpace::memory_space>,
-      void, INT_TYPE>
-      matrix("A",          // const std::string& /* label */,
-             A.num_rows(), // const OrdinalType nrows,
-             A.num_cols(), // const OrdinalType ncols,
-             A.nnz(),      // const size_type annz,
-             A.values,     // const values_type& vals,
-             A.row_ptr,    // const row_map_type& rowmap,
-             A.col_idx);   // const index_type& cols)
+    double,
+    INT_TYPE,
+    Kokkos::Device<Kokkos::DefaultExecutionSpace,
+                   typename Kokkos::DefaultExecutionSpace::memory_space>,
+    void,
+    INT_TYPE>
+    matrix("A",          // const std::string& /* label */,
+           A.num_rows(), // const OrdinalType nrows,
+           A.num_cols(), // const OrdinalType ncols,
+           A.nnz(),      // const size_type annz,
+           A.values,     // const values_type& vals,
+           A.row_ptr,    // const row_map_type& rowmap,
+           A.col_idx);   // const index_type& cols)
   KokkosSparse::spmv("N", 1.0, matrix, x, 0.0, y);
 }
 
@@ -61,8 +63,13 @@ template <class YType, class AType, class XType>
 void spmv(YType y, AType A, XType x) {
   int num_rows = A.num_rows();
 #ifdef USE_MKL
-  mkl_dcsrgemv("N", &num_rows, A.values.data(), A.row_ptr.data(),
-               A.col_idx.data(), x.data(), y.data());
+  mkl_dcsrgemv("N",
+               &num_rows,
+               A.values.data(),
+               A.row_ptr.data(),
+               A.col_idx.data(),
+               x.data(),
+               y.data());
 #else
 
   // For low thread counts spread rows over individual threads
@@ -77,41 +84,41 @@ void spmv(YType y, AType A, XType x) {
 
   INT_TYPE nrows = y.extent(0);
   Kokkos::parallel_for(
-      "SPMV",
-      Kokkos::TeamPolicy<>((nrows + rows_per_team - 1) / rows_per_team,
-                           team_size, 8),
-      KOKKOS_LAMBDA(const Kokkos::TeamPolicy<>::member_type &team) {
-        const INT_TYPE first_row = team.league_rank() * rows_per_team;
-        const INT_TYPE last_row = first_row + rows_per_team < nrows
-                                      ? first_row + rows_per_team
-                                      : nrows;
-        Kokkos::parallel_for(Kokkos::TeamThreadRange(team, first_row, last_row),
-                             [&](const INT_TYPE row) {
-                               const INT_TYPE row_start = A.row_ptr(row);
-                               const INT_TYPE row_length =
-                                   A.row_ptr(row + 1) - row_start;
+    "SPMV",
+    Kokkos::TeamPolicy<>(
+      (nrows + rows_per_team - 1) / rows_per_team, team_size, 8),
+    KOKKOS_LAMBDA(Kokkos::TeamPolicy<>::member_type const &team) {
+      const INT_TYPE first_row = team.league_rank() * rows_per_team;
+      const INT_TYPE last_row =
+        first_row + rows_per_team < nrows ? first_row + rows_per_team : nrows;
+      Kokkos::parallel_for(
+        Kokkos::TeamThreadRange(team, first_row, last_row),
+        [&](const INT_TYPE row) {
+          const INT_TYPE row_start = A.row_ptr(row);
+          const INT_TYPE row_length = A.row_ptr(row + 1) - row_start;
 
-                               double y_row;
-                               Kokkos::parallel_reduce(
-                                   Kokkos::ThreadVectorRange(team, row_length),
-                                   [=](const INT_TYPE i, double &sum) {
-                                     sum += A.values(i + row_start) *
-                                            x(A.col_idx(i + row_start));
-                                   },
-                                   y_row);
-                               y(row) = y_row;
-                             });
-      });
+          double y_row;
+          Kokkos::parallel_reduce(
+            Kokkos::ThreadVectorRange(team, row_length),
+            [=](const INT_TYPE i, double &sum) {
+              sum += A.values(i + row_start) * x(A.col_idx(i + row_start));
+            },
+            y_row);
+          y(row) = y_row;
+        });
+    });
 #endif
 }
 #endif
 
-template <class YType, class XType> double dot(YType y, XType x) {
+template <class YType, class XType>
+double dot(YType y, XType x) {
   double result;
   Kokkos::parallel_reduce(
-      "DOT", y.extent(0),
-      KOKKOS_LAMBDA(const INT_TYPE &i, double &lsum) { lsum += y(i) * x(i); },
-      result);
+    "DOT",
+    y.extent(0),
+    KOKKOS_LAMBDA(const INT_TYPE &i, double &lsum) { lsum += y(i) * x(i); },
+    result);
   return result;
 }
 
@@ -119,8 +126,9 @@ template <class ZType, class YType, class XType>
 void axpby(ZType z, double alpha, XType x, double beta, YType y) {
   INT_TYPE n = z.extent(0);
   Kokkos::parallel_for(
-      "AXPBY", n,
-      KOKKOS_LAMBDA(const int &i) { z(i) = alpha * x(i) + beta * y(i); });
+    "AXPBY", n, KOKKOS_LAMBDA(int const &i) {
+      z(i) = alpha * x(i) + beta * y(i);
+    });
 }
 
 template <class VType, class AType>
@@ -133,10 +141,8 @@ int cg_solve(VType y, AType A, VType b, int max_iter, double tolerance) {
   double oldrtrans = 0;
 
   INT_TYPE print_freq = max_iter / 10;
-  if (print_freq > 50)
-    print_freq = 50;
-  if (print_freq < 1)
-    print_freq = 1;
+  if (print_freq > 50) print_freq = 50;
+  if (print_freq < 1) print_freq = 1;
   VType x("x", b.extent(0));
   VType r("r", x.extent(0));
   VType p("r", x.extent(0));
@@ -152,9 +158,7 @@ int cg_solve(VType y, AType A, VType b, int max_iter, double tolerance) {
 
   normr = std::sqrt(rtrans);
 
-  if (myproc == 0) {
-    std::cout << "Initial Residual = " << normr << std::endl;
-  }
+  if (myproc == 0) { std::cout << "Initial Residual = " << normr << std::endl; }
 
   double brkdown_tol = std::numeric_limits<double>::epsilon();
 
@@ -187,8 +191,7 @@ int cg_solve(VType y, AType A, VType b, int max_iter, double tolerance) {
         std::cerr << "miniFE::cg_solve ERROR, numerical breakdown!"
                   << std::endl;
         return num_iters;
-      } else
-        brkdown_tol = 0.1 * p_ap_dot;
+      } else brkdown_tol = 0.1 * p_ap_dot;
     }
     alpha = rtrans / p_ap_dot;
 
@@ -208,14 +211,14 @@ int main(int argc, char *argv[]) {
 
   CrsMatrix<Kokkos::HostSpace> h_A = Impl::generate_miniFE_matrix(N);
   Kokkos::View<double *, Kokkos::HostSpace> h_x =
-      Impl::generate_miniFE_vector(N);
+    Impl::generate_miniFE_vector(N);
 
   Kokkos::View<INT_TYPE *> row_ptr("row_ptr", h_A.row_ptr.extent(0));
   Kokkos::View<INT_TYPE *> col_idx("col_idx", h_A.col_idx.extent(0));
   Kokkos::View<double *> values("values", h_A.values.extent(0));
 
   CrsMatrix<Kokkos::DefaultExecutionSpace::memory_space> A(
-      row_ptr, col_idx, values, h_A.num_cols());
+    row_ptr, col_idx, values, h_A.num_cols());
   Kokkos::View<double *> x("X", h_x.extent(0));
   Kokkos::View<double *> y("Y", h_x.extent(0));
 
@@ -252,17 +255,23 @@ int main(int argc, char *argv[]) {
   int dot_calls = num_iters * 2;
   int axpby_calls = 2 + num_iters * 3;
 
-  printf("CGSolve for 3D (%i %i %i); %i iterations; %lf time\n", N, N, N,
-         num_iters, time);
+  printf("CGSolve for 3D (%i %i %i); %i iterations; %lf time\n",
+         N,
+         N,
+         N,
+         num_iters,
+         time);
   printf(
-      "Performance: %lf GFlop/s %lf GB/s (Calls SPMV: %i Dot: %i AXPBY: %i\n",
-      1e-9 *
-          (spmv_flops * spmv_calls + dot_flops * dot_calls +
-           axpby_flops * axpby_calls) /
-          time,
-      (1.0 / 1024 / 1024 / 1024) *
-          (spmv_bytes * spmv_calls + dot_bytes * dot_calls +
-           axpby_bytes * axpby_calls) /
-          time,
-      spmv_calls, dot_calls, axpby_calls);
+    "Performance: %lf GFlop/s %lf GB/s (Calls SPMV: %i Dot: %i AXPBY: %i\n",
+    1e-9 *
+      (spmv_flops * spmv_calls + dot_flops * dot_calls +
+       axpby_flops * axpby_calls) /
+      time,
+    (1.0 / 1024 / 1024 / 1024) *
+      (spmv_bytes * spmv_calls + dot_bytes * dot_calls +
+       axpby_bytes * axpby_calls) /
+      time,
+    spmv_calls,
+    dot_calls,
+    axpby_calls);
 }

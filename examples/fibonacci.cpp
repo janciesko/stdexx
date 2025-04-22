@@ -27,15 +27,16 @@ long serial_fib(long n) {
 }
 
 template <class... Ts>
-using any_sender_of =
-  typename exec::any_receiver_ref<stdexx::completion_signatures<Ts...>>::template any_sender<>;
+using any_sender_of = typename exec::any_receiver_ref<
+  stdexx::completion_signatures<Ts...>>::template any_sender<>;
 
 using fib_sender = any_sender_of<stdexx::set_value_t(long)>;
 
 template <typename Scheduler>
 struct fib_s {
   using sender_concept = stdexx::sender_t;
-  using completion_signatures = stdexx::completion_signatures<stdexx::set_value_t(long)>;
+  using completion_signatures =
+    stdexx::completion_signatures<stdexx::set_value_t(long)>;
 
   long cutoff;
   long n;
@@ -48,26 +49,30 @@ struct fib_s {
     long n;
     Scheduler sched;
 
-    friend void tag_invoke(stdexx::start_t, operation& self) noexcept {
+    friend void tag_invoke(stdexx::start_t, operation &self) noexcept {
       if (self.n < self.cutoff) {
-        stdexx::set_value(static_cast<Receiver&&>(self.rcvr_), serial_fib(self.n));
+        stdexx::set_value(static_cast<Receiver &&>(self.rcvr_),
+                          serial_fib(self.n));
       } else {
         auto mkchild = [&](long n) {
-          return stdexx::starts_on(self.sched, fib_sender(fib_s{self.cutoff, n, self.sched}));
+          return stdexx::starts_on(
+            self.sched, fib_sender(fib_s{self.cutoff, n, self.sched}));
         };
 
         stdexx::start_detached(
-          stdexx::when_all(mkchild(self.n - 1), mkchild(self.n - 2))
-          | stdexx::then([rcvr = static_cast<Receiver&&>(self.rcvr_)](long a, long b) mutable {
-              stdexx::set_value(static_cast<Receiver&&>(rcvr), a + b);
-            }));
+          stdexx::when_all(mkchild(self.n - 1), mkchild(self.n - 2)) |
+          stdexx::then([rcvr = static_cast<Receiver &&>(self.rcvr_)](
+                         long a, long b) mutable {
+            stdexx::set_value(static_cast<Receiver &&>(rcvr), a + b);
+          }));
       }
     }
   };
 
   template <stdexx::receiver_of<completion_signatures> Receiver>
-  friend operation<Receiver> tag_invoke(stdexx::connect_t, fib_s self, Receiver rcvr) {
-    return {static_cast<Receiver&&>(rcvr), self.cutoff, self.n, self.sched};
+  friend operation<Receiver>
+  tag_invoke(stdexx::connect_t, fib_s self, Receiver rcvr) {
+    return {static_cast<Receiver &&>(rcvr), self.cutoff, self.n, self.sched};
   }
 };
 
@@ -75,15 +80,20 @@ template <class Scheduler>
 fib_s(long cutoff, long n, Scheduler sched) -> fib_s<Scheduler>;
 
 template <typename duration, typename F>
-auto measure(F&& f) {
-  std::chrono::steady_clock::time_point start = std::chrono::steady_clock::now();
+auto measure(F &&f) {
+  std::chrono::steady_clock::time_point start =
+    std::chrono::steady_clock::now();
   f();
-  return std::chrono::duration_cast<duration>(std::chrono::steady_clock::now() - start).count();
+  return std::chrono::duration_cast<duration>(std::chrono::steady_clock::now() -
+                                              start)
+    .count();
 }
 
-int main(int argc, char** argv) {
+int main(int argc, char **argv) {
   if (argc < 5) {
-    std::cerr << "Usage: example.benchmark.fibonacci cutoff n nruns {tbb|static}" << std::endl;
+    std::cerr
+      << "Usage: example.benchmark.fibonacci cutoff n nruns {tbb|static}"
+      << std::endl;
     return -1;
   }
 
@@ -102,26 +112,31 @@ int main(int argc, char** argv) {
   std::variant<execpools::tbb_thread_pool, exec::static_thread_pool> pool;
 
   if (argv[4] == std::string_view("tbb")) {
-    pool.emplace<execpools::tbb_thread_pool>(static_cast<int>(std::thread::hardware_concurrency()));
+    pool.emplace<execpools::tbb_thread_pool>(
+      static_cast<int>(std::thread::hardware_concurrency()));
   } else {
-    pool.emplace<exec::static_thread_pool>(
-      std::thread::hardware_concurrency(), exec::bwos_params{}, exec::get_numa_policy());
+    pool.emplace<exec::static_thread_pool>(std::thread::hardware_concurrency(),
+                                           exec::bwos_params{},
+                                           exec::get_numa_policy());
   }
 
   std::vector<unsigned long> times;
   long result;
   for (unsigned long i = 0; i < nruns; ++i) {
     auto snd = std::visit(
-      [&](auto&& pool) { return fib_sender(fib_s{cutoff, n, pool.get_scheduler()}); }, pool);
+      [&](auto &&pool) {
+        return fib_sender(fib_s{cutoff, n, pool.get_scheduler()});
+      },
+      pool);
 
-    auto time = measure<std::chrono::milliseconds>([&] {
-      std::tie(result) = stdexx::sync_wait(std::move(snd)).value();
-    });
+    auto time = measure<std::chrono::milliseconds>(
+      [&] { std::tie(result) = stdexx::sync_wait(std::move(snd)).value(); });
     times.push_back(static_cast<unsigned int>(time));
   }
 
   std::cout << "Avg time: "
-            << (std::accumulate(times.begin() + warmup, times.end(), 0u) / (times.size() - warmup))
+            << (std::accumulate(times.begin() + warmup, times.end(), 0u) /
+                (times.size() - warmup))
             << "ms. Result: " << result << std::endl;
 }
 
