@@ -112,7 +112,7 @@ struct scheduler {
     using is_sender = void;
 
     using completion_signatures = stdexec::make_completion_signatures<
-        Sender, stdexec::empty_env,
+        Sender, stdexec::env<>,
         stdexec::completion_signatures<stdexec::set_error_t(
             std::exception_ptr)>>;
 
@@ -161,7 +161,7 @@ struct scheduler {
                              std::forward<Ts>(ts)...);
         }
 
-        friend constexpr stdexec::empty_env
+        friend constexpr stdexec::env<>
         tag_invoke(stdexec::get_env_t, bulk_receiver const &) noexcept {
           return {};
         }
