@@ -40,11 +40,6 @@ else ()
   message(FATAL_ERROR "EXEC_BACKEND not specified or not recognized.")
 endif()
 
-list(LENGTH ULTs nULTs)
-if (NOT ${nULTs} EQUAL "1")
-  message(FATAL_ERROR "Must give a single valid ULT backend. ${nULTs} given.")
-endif()
-
 find_package(stdexec REQUIRED)
 
 add_subdirectory(impl)
@@ -58,7 +53,4 @@ if(ENABLE_BUILD_EXAMPLES)
     message(STATUS "Including examples")
     add_subdirectory(examples)
 endif()
-
-
-
 
