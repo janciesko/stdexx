@@ -61,15 +61,15 @@ struct scheduler {
                                      stdexec::set_error_t(int)>;
 
     template <typename Receiver>
-    operation_state<Receiver> connect(Receiver &&receiver) {
+    operation_state<Receiver> connect(Receiver &&receiver) const {
       return {std::forward<Receiver>(receiver)};
     }
 
     struct env {
-      scheduler get_completion_scheduler() noexcept { return {}; }
+      scheduler get_completion_scheduler() const noexcept { return {}; }
     };
 
-    env get_env() noexcept { return {}; }
+    env get_env() const noexcept { return {}; }
   };
 
   sender schedule() const noexcept { return {}; }
