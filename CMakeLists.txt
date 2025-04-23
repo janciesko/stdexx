@@ -12,9 +12,9 @@ project(stdexx
   VERSION 0.1
   LANGUAGES C CXX)
 
-list(APPEND CMAKE_MODULE_PATH ${CMAKE_CURRENT_SOURCE_DIR}/modules)
+list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/modules")
 
-include(${CMAKE_CURRENT_SOURCE_DIR}/modules/flags.cmake)
+include("${CMAKE_CURRENT_SOURCE_DIR}/modules/flags.cmake")
 
 option(ENABLE_BUILD_APPS "Build cgsolve example" OFF)
 option(ENABLE_BUILD_EXAMPLES "Build fibonacci example" OFF)
