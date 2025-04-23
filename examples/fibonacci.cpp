@@ -49,19 +49,19 @@ struct fib_s {
     long n;
     Scheduler sched;
 
-    friend void tag_invoke(stdexx::start_t, operation &self) noexcept {
-      if (self.n < self.cutoff) {
-        stdexx::set_value(static_cast<Receiver &&>(self.rcvr_),
-                          serial_fib(self.n));
+    void start() noexcept {
+      if (this->n < this->cutoff) {
+        stdexx::set_value(static_cast<Receiver &&>(this->rcvr_),
+                          serial_fib(this->n));
       } else {
         auto mkchild = [&](long n) {
           return stdexx::starts_on(
-            self.sched, fib_sender(fib_s{self.cutoff, n, self.sched}));
+            this->sched, fib_sender(fib_s{this->cutoff, n, this->sched}));
         };
 
         stdexx::start_detached(
-          stdexx::when_all(mkchild(self.n - 1), mkchild(self.n - 2)) |
-          stdexx::then([rcvr = static_cast<Receiver &&>(self.rcvr_)](
+          stdexx::when_all(mkchild(this->n - 1), mkchild(this->n - 2)) |
+          stdexx::then([rcvr = static_cast<Receiver &&>(this->rcvr_)](
                          long a, long b) mutable {
             stdexx::set_value(static_cast<Receiver &&>(rcvr), a + b);
           }));
@@ -70,9 +70,8 @@ struct fib_s {
   };
 
   template <stdexx::receiver_of<completion_signatures> Receiver>
-  friend operation<Receiver>
-  tag_invoke(stdexx::connect_t, fib_s self, Receiver rcvr) {
-    return {static_cast<Receiver &&>(rcvr), self.cutoff, self.n, self.sched};
+  operation<Receiver> connect(Receiver rcvr) {
+    return {static_cast<Receiver &&>(rcvr), this->cutoff, this->n, this->sched};
   }
 };
 

@@ -42,13 +42,13 @@ struct scheduler {
       return 0;
     }
 
-    friend void tag_invoke(stdexec::start_t, operation_state &os) noexcept {
+    inline void start() noexcept {
       aligned_t ret = 0;
-      int r = qthread_fork(&task, &os, &ret);
+      int r = qthread_fork(&task, this, &ret);
       qthread_readFF(NULL, &ret);
 
       if (r != QTHREAD_SUCCESS) {
-        stdexec::set_error(std::move(os.receiver), r);
+        stdexec::set_error(std::move(this->receiver), r);
       }
     }
   };
@@ -61,35 +61,18 @@ struct scheduler {
                                      stdexec::set_error_t(int)>;
 
     template <typename Receiver>
-    friend operation_state<Receiver>
-    tag_invoke(stdexec::connect_t, sender &&s, Receiver &&receiver) {
-      return {std::forward<Receiver>(receiver)};
-    }
-
-    template <typename Receiver>
-    friend operation_state<Receiver>
-    tag_invoke(stdexec::connect_t, sender const &s, Receiver &&receiver) {
+    operation_state<Receiver> connect(Receiver &&receiver) {
       return {std::forward<Receiver>(receiver)};
     }
 
     struct env {
-      friend scheduler
-      tag_invoke(stdexec::get_completion_scheduler_t<stdexec::set_value_t>,
-                 env const &e) noexcept {
-        return {};
-      }
+      scheduler get_completion_scheduler() noexcept { return {}; }
     };
 
-    friend env tag_invoke(stdexec::get_env_t, sender const &s) noexcept {
-      return {};
-    }
+    env get_env() noexcept { return {}; }
   };
 
-  friend sender tag_invoke(stdexec::schedule_t, scheduler &&) { return {}; }
-
-  friend sender tag_invoke(stdexec::schedule_t, scheduler const &) {
-    return {};
-  }
+  sender schedule() const noexcept { return {}; }
 
   template <typename Sender, typename Shape, typename F>
   struct qthreads_bulk_sender {
@@ -121,18 +104,13 @@ struct scheduler {
 
         operation_state *op_state;
 
-        // TODO: tag_invoke is replaced with member functions in P2300R9.
-        // tag_invoke is still supported by stdexec.
         template <typename E>
-        friend void
-        tag_invoke(stdexec::set_error_t, bulk_receiver &&r, E &&e) noexcept {
-          stdexec::set_error(std::move(r.op_state->receiver),
-                             std::forward<E>(e));
+        void set_error(E &&e) noexcept {
+          stdexec::set_error(std::move(op_state->receiver), std::forward<E>(e));
         }
 
-        friend void tag_invoke(stdexec::set_stopped_t,
-                               bulk_receiver &&r) noexcept {
-          stdexec::set_stopped(std::move(r.op_state->receiver));
+        void set_stopped() noexcept {
+          stdexec::set_stopped(std::move(op_state->receiver));
         }
 
         static void
@@ -146,26 +124,21 @@ struct scheduler {
         }
 
         template <typename... Ts>
-        friend void tag_invoke(stdexec::set_value_t,
-                               bulk_receiver &&r,
-                               Ts &&...ts) noexcept {
+        void set_value_t(Ts &&...ts) noexcept {
           // TODO: Don't spawn tasks if there is no work to be done? Maybe
           // qt_loop_balance already does that?
           // TODO: Are there other qt_loop_* functions that are better?
           // TODO: Is there a non-blocking version of this where one can attach
           // a continuation? One can also emulate this in task.
           qt_loop_balance(static_cast<std::size_t>(0),
-                          static_cast<std::size_t>(r.op_state->shape),
+                          static_cast<std::size_t>(op_state->shape),
                           &task,
-                          r.op_state);
-          stdexec::set_value(std::move(r.op_state->receiver),
+                          op_state);
+          stdexec::set_value(std::move(op_state->receiver),
                              std::forward<Ts>(ts)...);
         }
 
-        friend constexpr stdexec::env<>
-        tag_invoke(stdexec::get_env_t, bulk_receiver const &) noexcept {
-          return {};
-        }
+        constexpr stdexec::env<> get_env() const noexcept { return {}; }
       };
 
       using operation_state_type =
@@ -191,34 +164,25 @@ struct scheduler {
         shape(std::forward<Shape_>(shape)), f(std::forward<F_>(f)),
         receiver(std::forward<Receiver_>(receiver)) {}
 
-      friend void tag_invoke(stdexec::start_t, operation_state &os) noexcept {
-        stdexec::start(os.op_state);
-      }
+      void start() noexcept { stdexec::start(op_state); }
     };
 
     template <typename Receiver>
-    friend auto tag_invoke(stdexec::connect_t,
-                           qthreads_bulk_sender &&s,
-                           Receiver &&receiver) {
+    auto connect(Receiver &&receiver) {
       return operation_state<std::decay_t<Receiver>>{
-        std::move(s.sender),
-        std::move(s.shape),
-        std::move(s.f),
+        std::move(sender),
+        std::move(shape),
+        std::move(f),
         std::forward<Receiver>(receiver)};
     }
 
     template <typename Receiver>
-    friend auto tag_invoke(stdexec::connect_t,
-                           qthreads_bulk_sender const &s,
-                           Receiver &&receiver) {
+    auto connect(Receiver &&receiver) const {
       return operation_state<std::decay_t<Receiver>>{
-        s.sender, s.shape, s.f, std::forward<Receiver>(receiver)};
+        sender, shape, f, std::forward<Receiver>(receiver)};
     }
 
-    friend constexpr auto tag_invoke(stdexec::get_env_t,
-                                     qthreads_bulk_sender const &s) noexcept {
-      return stdexec::get_env(s.sender);
-    }
+    constexpr auto get_env() const noexcept { return stdexec::get_env(sender); }
   };
 
   // TODO: This uses the new eager and lazy transform_sender customization
@@ -252,9 +216,7 @@ struct scheduler {
     }
   };
 
-  friend domain tag_invoke(stdexec::get_domain_t, scheduler const &) noexcept {
-    return {};
-  }
+  domain get_domain() const noexcept { return {}; }
 };
 } // namespace stdexx
 
