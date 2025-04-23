@@ -124,7 +124,7 @@ struct scheduler {
         }
 
         template <typename... Ts>
-        void set_value_t(Ts &&...ts) noexcept {
+        void set_value(Ts &&...ts) noexcept {
           // TODO: Don't spawn tasks if there is no work to be done? Maybe
           // qt_loop_balance already does that?
           // TODO: Are there other qt_loop_* functions that are better?
