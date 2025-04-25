@@ -35,9 +35,15 @@ struct scheduler {
     operation_state &operator=(operation_state &&) = delete;
     operation_state &operator=(operation_state const &) = delete;
 
+    // This one's not a part of the stdexec standard.
+    // This is just the function that gets passed to qthread_fork.
     static aligned_t task(void *arg) noexcept {
       auto *os = static_cast<operation_state *>(arg);
-      printf("Hello from qthreads in task! id = %i\n", qthread_id());
+      printf("Hello from qthreads in initial scheduling task! id = %i\n",
+             qthread_id());
+      // This call to set_value does the other work from a bunch of the
+      // algorithms in stdexec. The simpler ones just recursively do their work
+      // here.
       stdexec::set_value(std::move(os->receiver));
       return 0;
     }
@@ -53,9 +59,13 @@ struct scheduler {
     }
   };
 
+  // sender type returned by stdexec::schedule in order to
+  // start a chain of tasks on this scheduler.
   struct sender {
     using is_sender = void;
 
+    // The types of completion this sender supports.
+    // In this case it can't do set_stopped, so it's not listed here.
     using completion_signatures =
       stdexec::completion_signatures<stdexec::set_value_t(),
                                      stdexec::set_error_t(int)>;
@@ -72,6 +82,8 @@ struct scheduler {
     env get_env() const noexcept { return {}; }
   };
 
+  // Called by stdexec::schedule to get a sender that can
+  // start a chain of tasks on this scheduler.
   sender schedule() const noexcept { return {}; }
 
   template <typename Sender, typename Shape, typename F>
@@ -130,10 +142,12 @@ struct scheduler {
           // TODO: Are there other qt_loop_* functions that are better?
           // TODO: Is there a non-blocking version of this where one can attach
           // a continuation? One can also emulate this in task.
+          std::cout << "launching qt_loop_balance" << std::endl;
           qt_loop_balance(static_cast<std::size_t>(0),
                           static_cast<std::size_t>(op_state->shape),
                           &task,
                           op_state);
+          std::cout << "inside set_value" << std::endl;
           stdexec::set_value(std::move(op_state->receiver),
                              std::forward<Ts>(ts)...);
         }
