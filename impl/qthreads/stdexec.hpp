@@ -24,11 +24,12 @@ struct scheduler {
 
   template <typename Receiver>
   struct operation_state {
+    aligned_t *feb;
     [[no_unique_address]] std::decay_t<Receiver> receiver;
 
     template <typename Receiver_>
-    operation_state(Receiver_ &&receiver):
-      receiver(std::forward<Receiver_>(receiver)) {}
+    operation_state(aligned_t *f, Receiver_ &&receiver):
+      feb(f), receiver(std::forward<Receiver_>(receiver)) {}
 
     operation_state(operation_state &&) = delete;
     operation_state(operation_state const &) = delete;
@@ -39,8 +40,8 @@ struct scheduler {
     // This is just the function that gets passed to qthread_fork.
     static aligned_t task(void *arg) noexcept {
       auto *os = static_cast<operation_state *>(arg);
-      printf("Hello from qthreads in initial scheduling task! id = %i\n",
-             qthread_id());
+      std::cout << "Hello from qthreads in initial scheduling task! id = "
+                << qthread_id() << std::endl;
       // This call to set_value does the other work from a bunch of the
       // algorithms in stdexec. The simpler ones just recursively do their work
       // here.
@@ -49,9 +50,10 @@ struct scheduler {
     }
 
     inline void start() noexcept {
-      aligned_t ret = 0;
-      int r = qthread_fork(&task, this, &ret);
-      qthread_readFF(NULL, &ret);
+      std::cout << "calling qthread_fork" << std::endl;
+      int r = qthread_fork(&task, this, feb);
+      assert(!r);
+      // qthread_readFF(NULL, &ret);
 
       if (r != QTHREAD_SUCCESS) {
         stdexec::set_error(std::move(this->receiver), r);
@@ -64,6 +66,9 @@ struct scheduler {
   struct sender {
     using is_sender = void;
 
+    // a feb to allow waiting on this sender.
+    aligned_t feb;
+
     // The types of completion this sender supports.
     // In this case it can't do set_stopped, so it's not listed here.
     using completion_signatures =
@@ -71,8 +76,8 @@ struct scheduler {
                                      stdexec::set_error_t(int)>;
 
     template <typename Receiver>
-    operation_state<Receiver> connect(Receiver &&receiver) const {
-      return {std::forward<Receiver>(receiver)};
+    operation_state<Receiver> connect(Receiver &&receiver) {
+      return {&feb, std::forward<Receiver>(receiver)};
     }
 
     struct env {
@@ -228,10 +233,42 @@ struct scheduler {
                                       transform_bulk{});
       }
     }
+
+    // template <typename tag, execution::sender sndr, typename... args>
+    // decltype(auto) apply_sender(tag, sndr &&s, args&&... a) {
+    //   std::abort();
+    // }
   };
 
   domain get_domain() const noexcept { return {}; }
 };
 } // namespace stdexx
+
+template <>
+auto stdexec::__sync_wait::sync_wait_t::apply_sender<stdexx::scheduler::sender>(
+  stdexx::scheduler::sender &&s) const
+  -> std::optional<
+    stdexec::__sync_wait::__sync_wait_result_t<stdexx::scheduler::sender>> {
+  __state __local_state{};
+  std::optional<
+    stdexec::__sync_wait::__sync_wait_result_t<stdexx::scheduler::sender>>
+    result{};
+
+  // Launch the sender with a continuation that will fill in the __result
+  // optional or set the exception_ptr in __local_state.
+  [[maybe_unused]]
+  auto op = stdexec::connect(
+    static_cast<stdexx::scheduler::sender &&>(s),
+    __receiver_t<stdexx::scheduler::sender>{&__local_state, &result});
+  stdexec::start(op);
+
+  // Wait for the variant to be filled in.
+
+  std::cout << "successfully specialized sync_wait!" << std::endl;
+  aligned_t r;
+  qthread_readFF(&r, &s.feb);
+  std::cout << "Returned from waiting" << std::endl;
+  return result;
+}
 
 #endif
