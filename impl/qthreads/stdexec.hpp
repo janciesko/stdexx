@@ -80,6 +80,18 @@ struct scheduler {
       return {&feb, std::forward<Receiver>(receiver)};
     }
 
+    template <typename Receiver>
+    static operation_state<Receiver> connect(sender &&s, Receiver &&receiver) {
+      std::cout << "calling through single-shot connect." << std::endl;
+      return {&s.feb, std::forward<Receiver>(receiver)};
+    }
+
+    template <typename Receiver>
+    static operation_state<Receiver> connect(sender &s, Receiver &&receiver) {
+      std::cout << "calling through multi-shot connect." << std::endl;
+      return {&s.feb, std::forward<Receiver>(receiver)};
+    }
+
     struct env {
       scheduler get_completion_scheduler() const noexcept { return {}; }
     };
@@ -256,10 +268,11 @@ auto stdexec::__sync_wait::sync_wait_t::apply_sender<stdexx::scheduler::sender>(
 
   // Launch the sender with a continuation that will fill in the __result
   // optional or set the exception_ptr in __local_state.
+  std::cout << "calling connect" << std::endl;
   [[maybe_unused]]
   auto op = stdexec::connect(
-    static_cast<stdexx::scheduler::sender &&>(s),
-    __receiver_t<stdexx::scheduler::sender>{&__local_state, &result});
+    s, __receiver_t<stdexx::scheduler::sender>{&__local_state, &result});
+  std::cout << "starting op" << std::endl;
   stdexec::start(op);
 
   // Wait for the variant to be filled in.
