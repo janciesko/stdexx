@@ -13,6 +13,66 @@ int init() { return qthread_initialize(); }
 
 void finalize() { qthread_finalize(); }
 
+// check whether a domain or tag provides an applicable
+// transform_sender implementation.
+// i.e. tag.transform_sender(std::forward(sender), env...) exists.
+template <class DomainOrTag, class Sender, class... Env>
+concept has_transform_sender =
+  requires(DomainOrTag tag, Sender &&sender, Env const &...env) {
+    tag.transform_sender(static_cast<Sender &&>(sender), env...);
+  };
+
+// TODO: What is going on here?
+template <class _Sender, class... _Env>
+concept has_default_transform_sender =
+  stdexec::sender_expr<_Sender> &&
+  has_transform_sender<stdexec::tag_of_t<_Sender>, _Sender, _Env...>;
+
+struct qthreads_domain {
+  template <class _Sender, class... _Env>
+    requires has_default_transform_sender<_Sender, _Env...>
+  STDEXEC_ATTRIBUTE((always_inline))
+  auto transform_sender(_Sender &&__sndr, _Env &&...__env) const noexcept(
+    stdexec::__detail::__has_nothrow_transform_sender<
+      stdexec::tag_of_t<_Sender>,
+      _Sender,
+      _Env...>) -> stdexec::__detail::
+    __transform_sender_result_t<stdexec::tag_of_t<_Sender>, _Sender, _Env...> {
+    return stdexec::tag_of_t<_Sender>().transform_sender(
+      static_cast<_Sender &&>(__sndr), __env...);
+  }
+
+  template <class _Sender, class... _Env>
+  STDEXEC_ATTRIBUTE((always_inline))
+  auto transform_sender(_Sender &&__sndr, _Env &&...) const
+    noexcept(stdexec::__nothrow_constructible_from<_Sender, _Sender>)
+      -> _Sender {
+    return static_cast<_Sender>(static_cast<_Sender &&>(__sndr));
+  }
+
+  template <class _Sender, class _Env>
+    requires stdexec::__detail::__has_default_transform_env<_Sender, _Env>
+  auto transform_env(_Sender &&__sndr, _Env &&__env) const noexcept
+    -> stdexec::__detail::
+      __transform_env_result_t<stdexec::tag_of_t<_Sender>, _Sender, _Env> {
+    return stdexec::tag_of_t<_Sender>().transform_env(
+      static_cast<_Sender &&>(__sndr), static_cast<_Env &&>(__env));
+  }
+
+  template <class _Env>
+  auto transform_env(stdexec::__ignore, _Env &&__env) const noexcept -> _Env {
+    return static_cast<_Env>(static_cast<_Env &&>(__env));
+  }
+
+  template <class _Tag, class... _Args>
+    requires stdexec::__detail::__has_apply_sender<_Tag, _Args...>
+  STDEXEC_ATTRIBUTE((always_inline))
+  auto apply_sender(_Tag, _Args &&...__args) const //
+    -> stdexec::__detail::__apply_sender_result_t<_Tag, _Args...> {
+    return _Tag().apply_sender(static_cast<_Args &&>(__args)...);
+  }
+};
+
 struct scheduler {
   constexpr scheduler() = default;
 
