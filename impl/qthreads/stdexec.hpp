@@ -13,111 +13,29 @@ int init() { return qthread_initialize(); }
 
 void finalize() { qthread_finalize(); }
 
-// check whether a domain or tag provides an applicable
-// transform_sender implementation.
-// i.e. tag.transform_sender(std::forward(sender), env...) exists.
-template <class DomainOrTag, class Sender, class... Env>
-concept has_transform_sender =
-  requires(DomainOrTag tag, Sender &&sender, Env const &...env) {
-    tag.transform_sender(static_cast<Sender &&>(sender), env...);
-  };
+template <class Tag, class... Env>
+struct transform_sender_for;
 
-// This is just a version of "has_transform_sender"
-// that sanitizes its inputs and checks specifically
-// whether there's a transform_sender implementation for the default domain.
-// - sender_expr validates that _Sender is actually a sender.
-// - has_transform_sender checks that the default domain (retreived by
-//   tag_of_t?) has an implementation for the given sender and additional
-//   arguments.
-template <class _Sender, class... _Env>
-concept has_default_transform_sender =
-  stdexec::sender_expr<_Sender> &&
-  has_transform_sender<stdexec::tag_of_t<_Sender>, _Sender, _Env...>;
+template <class Tag>
+struct apply_sender_for;
 
-struct qthreads_domain {
-  // transform_sender forwards to a default implementation if there is one.
-  // This forwards to the sender's associated tag. I think that may just
-  // be the sender type. It's not clear to me why there's a distinction
-  // between the sender type and the associated tag. The main idea is
-  // that transform_sender gets implemented as a method on the sender type
-  // (or the tag type when that's different).
-  // Maybe the tag thing is just a way to reduce redundancies in the
-  // stdexec codebase.
-  template <class _Sender, class... _Env>
-  /* sanitize inputs */
-    requires has_default_transform_sender<_Sender, _Env...>
-  __attribute__((always_inline)) auto transform_sender(_Sender &&__sndr,
-                                                       _Env &&...__env) const
-    /* this giant noexcept thing is just to check if the transform_sender
-     * implementation that will be called and decide whether this should be
-     * noexcept based on that. */
-    noexcept(stdexec::__detail::__has_nothrow_transform_sender<
-             stdexec::tag_of_t<_Sender>,
-             _Sender,
-             _Env...>)
-    /* not sure why decltype(auto) isn't good here. TODO: why? */
-    -> stdexec::__detail::__transform_sender_result_t<
-      stdexec::tag_of_t<_Sender>,
-      _Sender,
-      _Env...> {
-    // Get the tag from the sender type (often the sender itself).
-    // then use the implementation that type provides for transform_sender.
-    return stdexec::tag_of_t<_Sender>().transform_sender(
-      static_cast<_Sender &&>(__sndr), __env...);
+struct qthreads_domain : stdexec::default_domain {
+  template <stdexec::sender_expr Sender,
+            class Tag = stdexec::tag_of_t<Sender>,
+            class... Env>
+    requires stdexec::__callable<stdexec::__sexpr_apply_t,
+                                 Sender,
+                                 transform_sender_for<Tag, Env...>>
+  static auto transform_sender(Sender &&sndr, Env const &...env) {
+    return stdexec::__sexpr_apply(static_cast<Sender &&>(sndr),
+                                  transform_sender_for<Tag, Env...>{env...});
   }
 
-  // transform_sender falls back to this if there's no default.
-  // It just calls the move constructor of the _Sender type and
-  // returns the result. It's noexcept if that is.
-  // So, apparently no transformation happens in this case.
-  template <class _Sender, class... _Env>
-  // _Env arguments are discarded.
-  __attribute__((always_inline)) auto transform_sender(_Sender &&__sndr,
-                                                       _Env &&...) const
-    noexcept(stdexec::__nothrow_constructible_from<_Sender, _Sender>)
-      -> _Sender {
-    return static_cast<_Sender>(static_cast<_Sender &&>(__sndr));
-  }
-
-  // transform_env forwards to a default implementation if there is one.
-  // This forwards to the sender's associated tag. I think that may just
-  // be the sender type. It's not clear to me why there's a distinction
-  // between the sender type and the associated tag. The main idea is
-  // that transform_env gets implemented as a method on the sender type
-  // (or the tag type when that's different).
-  // Maybe the tag thing is just a way to reduce redundancies in the
-  // stdexec codebase.
-  template <class _Sender, class _Env>
-    requires stdexec::__detail::__has_default_transform_env<_Sender, _Env>
-  auto transform_env(_Sender &&__sndr, _Env &&__env) const noexcept
-    -> stdexec::__detail::
-      __transform_env_result_t<stdexec::tag_of_t<_Sender>, _Sender, _Env> {
-    return stdexec::tag_of_t<_Sender>().transform_env(
-      static_cast<_Sender &&>(__sndr), static_cast<_Env &&>(__env));
-  }
-
-  // transform_env falls back to this if there's no default.
-  // Note that the first argument is ignored entirely.
-  //   Note: it uses implicit conversions to do this instead of
-  //   having a template argument for doing that.
-  // It just calls the move constructor of the _Env type and
-  // returns the result.
-  // Apparently that's always expected to be noexcept?
-  template <class _Env>
-  auto transform_env(stdexec::__ignore, _Env &&__env) const noexcept -> _Env {
-    return static_cast<_Env>(static_cast<_Env &&>(__env));
-  }
-
-  // The default domain just forwards apply_sender to the tag type.
-  // In this case the tag indicates the operation being applied
-  // (e.g. sync_wait). A tag is passed as an argument to apply_sender
-  // so that the appropriate operation can be derived that way.
-  template <class _Tag, class... _Args>
-    requires stdexec::__detail::__has_apply_sender<_Tag, _Args...>
-  __attribute__((always_inline)) auto apply_sender(_Tag,
-                                                   _Args &&...__args) const
-    -> stdexec::__detail::__apply_sender_result_t<_Tag, _Args...> {
-    return _Tag().apply_sender(static_cast<_Args &&>(__args)...);
+  template <class Tag, stdexec::sender Sender, class... Args>
+    requires stdexec::__callable<apply_sender_for<Tag>, Sender, Args...>
+  static auto apply_sender(Tag, Sender &&sndr, Args &&...args) {
+    return apply_sender_for<Tag>{}(static_cast<Sender &&>(sndr),
+                                   static_cast<Args &&>(args)...);
   }
 };
 
