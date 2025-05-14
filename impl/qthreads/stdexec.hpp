@@ -42,6 +42,11 @@ struct qthreads_domain : stdexec::default_domain {
 struct scheduler {
   constexpr scheduler() = default;
 
+  // qthreads_domain get_domain() const noexcept { return {}; }
+  [[nodiscard]] auto query(stdexec::get_domain_t) -> qthreads_domain {
+    return {};
+  }
+
   bool operator==(scheduler const &rhs) const noexcept { return true; }
 
   bool operator!=(scheduler const &rhs) const noexcept {
@@ -123,12 +128,18 @@ struct scheduler {
     };
 
     env get_env() const noexcept { return {}; }
+
+    // qthreads_domain get_domain() const noexcept { return {}; }
+    [[nodiscard]] auto query(stdexec::get_domain_t) -> qthreads_domain {
+      return {};
+    }
   };
 
   // Called by stdexec::schedule to get a sender that can
   // start a chain of tasks on this scheduler.
   sender schedule() const noexcept { return {}; }
 
+  /*
   template <typename Sender, typename Shape, typename F>
   struct qthreads_bulk_sender {
     [[no_unique_address]] std::decay_t<Sender> sender;
@@ -277,8 +288,7 @@ struct scheduler {
     //   std::abort();
     // }
   };
-
-  domain get_domain() const noexcept { return {}; }
+  */
 };
 } // namespace stdexx
 
