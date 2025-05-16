@@ -81,13 +81,17 @@ struct qthreads_scheduler {
     // This is just the function that gets passed to qthread_fork.
     static aligned_t task(void *arg) noexcept {
       auto *os = static_cast<operation_state *>(arg);
+      // TODO: Call into a user-provided function pointer here instead.
+      // TODO: How do we pipe the template parameters around to accomodate
+      // different signatures (and return types) here?
       std::cout << "Hello from qthreads in initial scheduling task! id = "
                 << qthread_id() << std::endl;
       // This call to set_value does the other work from a bunch of the
       // algorithms in stdexec. The simpler ones just recursively do their work
       // here.
-      stdexec::set_value(std::move(os->receiver));
-      return 0;
+      aligned_t ret = 0u;
+      stdexec::set_value(std::move(os->receiver), ret);
+      return ret;
     }
 
     inline void start() noexcept {
@@ -113,7 +117,7 @@ struct qthreads_scheduler {
     // The types of completion this sender supports.
     // In this case it can't do set_stopped, so it's not listed here.
     using completion_signatures =
-      stdexec::completion_signatures<stdexec::set_value_t(),
+      stdexec::completion_signatures<stdexec::set_value_t(aligned_t),
                                      stdexec::set_error_t(int)>;
 
     template <typename Receiver>

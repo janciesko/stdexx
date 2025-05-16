@@ -13,7 +13,9 @@ int main() {
   auto snd = stdexec::schedule(stdexx::qthreads_scheduler{});
   stdexec::sync_wait(snd);
   */
-  stdexec::sync_wait(stdexec::schedule(stdexx::qthreads_scheduler{}));
+  auto val =
+    stdexec::sync_wait(stdexec::schedule(stdexx::qthreads_scheduler{})).value();
+  std::cout << std::get<0>(val) << std::endl;
 
   /* example of using stdexec::split.
    * We eventually should be able to do something similar with custom senders.
