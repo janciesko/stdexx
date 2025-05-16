@@ -19,7 +19,7 @@ struct transform_sender_for;
 template <class Tag>
 struct apply_sender_for;
 
-struct qthreads_domain : stdexec::default_domain {
+struct qthreads_domain /*: stdexec::default_domain*/ {
   template <stdexec::sender_expr Sender,
             class Tag = stdexec::tag_of_t<Sender>,
             class... Env>
@@ -42,8 +42,17 @@ struct qthreads_domain : stdexec::default_domain {
 struct scheduler {
   constexpr scheduler() = default;
 
-  // qthreads_domain get_domain() const noexcept { return {}; }
+  qthreads_domain get_domain() const noexcept { return {}; }
+
   [[nodiscard]] auto query(stdexec::get_domain_t) -> qthreads_domain {
+    return {};
+  }
+
+  // For some reason get_domain can currently only be specialized this way.
+  // TODO: fix and/or report this upstream.
+  // In theory adding get_domain as a method or using the query interface
+  // should work, but neither actually do.
+  friend qthreads_domain tag_invoke(stdexec::get_domain_t, scheduler const &) {
     return {};
   }
 
@@ -125,12 +134,27 @@ struct scheduler {
 
     struct env {
       scheduler get_completion_scheduler() const noexcept { return {}; }
+
+      qthreads_domain get_domain() const noexcept { return {}; }
+
+      [[nodiscard]] auto query(stdexec::get_domain_t) -> qthreads_domain {
+        return {};
+      }
+
+      friend qthreads_domain tag_invoke(stdexec::get_domain_t, env const &) {
+        return {};
+      }
     };
 
     env get_env() const noexcept { return {}; }
 
-    // qthreads_domain get_domain() const noexcept { return {}; }
+    qthreads_domain get_domain() const noexcept { return {}; }
+
     [[nodiscard]] auto query(stdexec::get_domain_t) -> qthreads_domain {
+      return {};
+    }
+
+    friend qthreads_domain tag_invoke(stdexec::get_domain_t, sender const &) {
       return {};
     }
   };
@@ -290,8 +314,43 @@ struct scheduler {
   };
   */
 };
+
+template <>
+struct apply_sender_for<stdexec::sync_wait_t> {
+  template <typename S>
+  auto operator()(S /*scheduler::sender*/ &&sn);
+
+  template <>
+  auto operator()(scheduler::sender &&sn) {
+    std::cout << "starting specialized apply_sender" << std::endl;
+    stdexec::__sync_wait::__state __local_state{};
+    std::optional<stdexec::__sync_wait::__sync_wait_result_t<scheduler::sender>>
+      result{};
+
+    // Launch the sender with a continuation that will fill in the __result
+    // optional or set the exception_ptr in __local_state.
+    std::cout << "calling connect" << std::endl;
+    [[maybe_unused]]
+    auto op =
+      stdexec::connect(sn,
+                       stdexec::__sync_wait::__receiver_t<scheduler::sender>{
+                         &__local_state, &result});
+    std::cout << "starting op" << std::endl;
+    stdexec::start(op);
+
+    // Wait for the variant to be filled in.
+
+    std::cout << "successfully specialized sync_wait!" << std::endl;
+    aligned_t r;
+    qthread_readFF(&r, &sn.feb);
+    std::cout << "Returned from waiting" << std::endl;
+    return result;
+  }
+};
+
 } // namespace stdexx
 
+/*
 template <>
 auto stdexec::__sync_wait::sync_wait_t::apply_sender<stdexx::scheduler::sender>(
   stdexx::scheduler::sender &&s) const
@@ -319,5 +378,6 @@ auto stdexec::__sync_wait::sync_wait_t::apply_sender<stdexx::scheduler::sender>(
   std::cout << "Returned from waiting" << std::endl;
   return result;
 }
+*/
 
 #endif
