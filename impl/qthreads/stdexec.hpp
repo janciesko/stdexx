@@ -39,8 +39,8 @@ struct qthreads_domain /*: stdexec::default_domain*/ {
   }
 };
 
-struct scheduler {
-  constexpr scheduler() = default;
+struct qthreads_scheduler {
+  constexpr qthreads_scheduler() = default;
 
   qthreads_domain get_domain() const noexcept { return {}; }
 
@@ -52,13 +52,14 @@ struct scheduler {
   // TODO: fix and/or report this upstream.
   // In theory adding get_domain as a method or using the query interface
   // should work, but neither actually do.
-  friend qthreads_domain tag_invoke(stdexec::get_domain_t, scheduler const &) {
+  friend qthreads_domain tag_invoke(stdexec::get_domain_t,
+                                    qthreads_scheduler const &) {
     return {};
   }
 
-  bool operator==(scheduler const &rhs) const noexcept { return true; }
+  bool operator==(qthreads_scheduler const &rhs) const noexcept { return true; }
 
-  bool operator!=(scheduler const &rhs) const noexcept {
+  bool operator!=(qthreads_scheduler const &rhs) const noexcept {
     return !(*this == rhs);
   }
 
@@ -102,8 +103,8 @@ struct scheduler {
   };
 
   // sender type returned by stdexec::schedule in order to
-  // start a chain of tasks on this scheduler.
-  struct sender {
+  // start a chain of tasks on this qthreads_scheduler.
+  struct qthreads_sender {
     using is_sender = void;
 
     // a feb to allow waiting on this sender.
@@ -121,19 +122,23 @@ struct scheduler {
     }
 
     template <typename Receiver>
-    static operation_state<Receiver> connect(sender &&s, Receiver &&receiver) {
+    static operation_state<Receiver> connect(qthreads_sender &&s,
+                                             Receiver &&receiver) {
       std::cout << "calling through single-shot connect." << std::endl;
       return {&s.feb, std::forward<Receiver>(receiver)};
     }
 
     template <typename Receiver>
-    static operation_state<Receiver> connect(sender &s, Receiver &&receiver) {
+    static operation_state<Receiver> connect(qthreads_sender &s,
+                                             Receiver &&receiver) {
       std::cout << "calling through multi-shot connect." << std::endl;
       return {&s.feb, std::forward<Receiver>(receiver)};
     }
 
     struct env {
-      scheduler get_completion_scheduler() const noexcept { return {}; }
+      qthreads_scheduler get_completion_scheduler() const noexcept {
+        return {};
+      }
 
       qthreads_domain get_domain() const noexcept { return {}; }
 
@@ -154,14 +159,15 @@ struct scheduler {
       return {};
     }
 
-    friend qthreads_domain tag_invoke(stdexec::get_domain_t, sender const &) {
+    friend qthreads_domain tag_invoke(stdexec::get_domain_t,
+                                      qthreads_sender const &) {
       return {};
     }
   };
 
-  // Called by stdexec::schedule to get a sender that can
+  // Called by stdexec::schedule to get a qthreads_sender that can
   // start a chain of tasks on this scheduler.
-  sender schedule() const noexcept { return {}; }
+  qthreads_sender schedule() const noexcept { return {}; }
 
   /*
   template <typename Sender, typename Shape, typename F>
@@ -298,11 +304,11 @@ struct scheduler {
 
     template <stdexec::sender_expr_for<stdexec::bulk_t> Sender, class Env>
     auto transform_sender(Sender &&sndr, Env const &env) const noexcept {
-      if constexpr (stdexec::__completes_on<Sender, scheduler>) {
+      if constexpr (stdexec::__completes_on<Sender, qthreads_scheduler>) {
         return stdexec::__sexpr_apply(std::forward<Sender>(sndr),
                                       transform_bulk{});
-      } else if constexpr (stdexec::__starts_on<Sender, scheduler, Env>) {
-        return stdexec::__sexpr_apply(std::forward<Sender>(sndr),
+      } else if constexpr (stdexec::__starts_on<Sender, qthreads_scheduler,
+  Env>) { return stdexec::__sexpr_apply(std::forward<Sender>(sndr),
                                       transform_bulk{});
       }
     }
@@ -318,23 +324,24 @@ struct scheduler {
 template <>
 struct apply_sender_for<stdexec::sync_wait_t> {
   template <typename S>
-  auto operator()(S /*scheduler::sender*/ &&sn);
+  auto operator()(S &&sn);
 
   template <>
-  auto operator()(scheduler::sender &&sn) {
+  auto operator()(qthreads_scheduler::qthreads_sender &&sn) {
     std::cout << "starting specialized apply_sender" << std::endl;
     stdexec::__sync_wait::__state __local_state{};
-    std::optional<stdexec::__sync_wait::__sync_wait_result_t<scheduler::sender>>
+    std::optional<stdexec::__sync_wait::__sync_wait_result_t<
+      qthreads_scheduler::qthreads_sender>>
       result{};
 
     // Launch the sender with a continuation that will fill in the __result
     // optional or set the exception_ptr in __local_state.
     std::cout << "calling connect" << std::endl;
     [[maybe_unused]]
-    auto op =
-      stdexec::connect(sn,
-                       stdexec::__sync_wait::__receiver_t<scheduler::sender>{
-                         &__local_state, &result});
+    auto op = stdexec::connect(
+      sn,
+      stdexec::__sync_wait::__receiver_t<qthreads_scheduler::qthreads_sender>{
+        &__local_state, &result});
     std::cout << "starting op" << std::endl;
     stdexec::start(op);
 
@@ -352,13 +359,15 @@ struct apply_sender_for<stdexec::sync_wait_t> {
 
 /*
 template <>
-auto stdexec::__sync_wait::sync_wait_t::apply_sender<stdexx::scheduler::sender>(
-  stdexx::scheduler::sender &&s) const
+auto
+stdexec::__sync_wait::sync_wait_t::apply_sender<stdexx::qthreads_scheduler::qthreads_sender>(
+  stdexx::qthreads_scheduler::qthreads_sender &&s) const
   -> std::optional<
-    stdexec::__sync_wait::__sync_wait_result_t<stdexx::scheduler::sender>> {
+    stdexec::__sync_wait::__sync_wait_result_t<stdexx::qthreads_scheduler::qthreads_sender>>
+{
   __state __local_state{};
   std::optional<
-    stdexec::__sync_wait::__sync_wait_result_t<stdexx::scheduler::sender>>
+    stdexec::__sync_wait::__sync_wait_result_t<stdexx::qthreads_scheduler::qthreads_sender>>
     result{};
 
   // Launch the sender with a continuation that will fill in the __result
@@ -366,9 +375,8 @@ auto stdexec::__sync_wait::sync_wait_t::apply_sender<stdexx::scheduler::sender>(
   std::cout << "calling connect" << std::endl;
   [[maybe_unused]]
   auto op = stdexec::connect(
-    s, __receiver_t<stdexx::scheduler::sender>{&__local_state, &result});
-  std::cout << "starting op" << std::endl;
-  stdexec::start(op);
+    s, __receiver_t<stdexx::qthreads_scheduler::qthreads_sender>{&__local_state,
+&result}); std::cout << "starting op" << std::endl; stdexec::start(op);
 
   // Wait for the variant to be filled in.
 

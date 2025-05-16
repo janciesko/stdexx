@@ -10,10 +10,10 @@ int main() {
   /* multi-shot currently doesn't work due to a quirk of our initial
   specialization of sync_wait.
    * We do have the correct overload provided now though.
-  auto snd = stdexec::schedule(stdexx::scheduler{});
+  auto snd = stdexec::schedule(stdexx::qthreads_scheduler{});
   stdexec::sync_wait(snd);
   */
-  stdexec::sync_wait(stdexec::schedule(stdexx::scheduler{}));
+  stdexec::sync_wait(stdexec::schedule(stdexx::qthreads_scheduler{}));
 
   /* example of using stdexec::split.
    * We eventually should be able to do something similar with custom senders.
@@ -23,7 +23,7 @@ int main() {
   stdexec::then([] { })); std::cout << counter << std::endl;*/
 
   /*stdexec::sender auto s =
-    stdexec::schedule(stdexx::scheduler{}) | stdexec::then([] {
+    stdexec::schedule(stdexx::qthreads_scheduler{}) | stdexec::then([] {
       std::cout << "Hello from user-level thread in then-functor!" << std::endl;
     }) |
     stdexec::bulk(20, [](int i) {
