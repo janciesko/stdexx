@@ -115,7 +115,11 @@ struct qthreads_scheduler {
     aligned_t feb;
 
     // The types of completion this sender supports.
-    // In this case it can't do set_stopped, so it's not listed here.
+    // In this case it can't do set_stopped (I think?) so it's not listed here.
+    // The default sync_wait returns an optional, not a variant, so
+    // set_value must have a single return type and only one entry here.
+    // In this case we use the return value to expose the return value
+    // from the underlying qthread.
     using completion_signatures =
       stdexec::completion_signatures<stdexec::set_value_t(aligned_t),
                                      stdexec::set_error_t(int)>;
