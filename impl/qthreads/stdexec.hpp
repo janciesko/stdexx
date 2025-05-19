@@ -95,6 +95,11 @@ struct qthreads_scheduler {
     }
 
     inline void start() noexcept {
+      auto st = stdexec::get_stop_token(stdexec::get_env(receiver));
+      if (st.stop_requested()) {
+        stdexec::set_stopped(std::move(receiver));
+        return;
+      }
       std::cout << "calling qthread_fork" << std::endl;
       int r = qthread_fork(&task, this, feb);
       assert(!r);
@@ -115,13 +120,18 @@ struct qthreads_scheduler {
     aligned_t feb;
 
     // The types of completion this sender supports.
-    // In this case it can't do set_stopped (I think?) so it's not listed here.
+    // Even though qthreads doesn't support cancellation, the
+    // corresponding sender and operation state can still
+    // cancel forking a qthread if cancellation has been
+    // requested by the time the operation state's start routine
+    // gets called.
     // The default sync_wait returns an optional, not a variant, so
     // set_value must have a single return type and only one entry here.
     // In this case we use the return value to expose the return value
     // from the underlying qthread.
     using completion_signatures =
       stdexec::completion_signatures<stdexec::set_value_t(aligned_t),
+                                     stdexec::set_stopped_t(),
                                      stdexec::set_error_t(int)>;
 
     template <typename Receiver>
