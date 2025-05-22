@@ -1,4 +1,7 @@
-using namespace std::execution;
+#include <numeric>
+#include <span>
+#include <stdexec/execution.hpp>
+using namespace stdexec;
 
 sender auto async_inclusive_scan(scheduler auto sch,            // 2
                                  std::span<const double> input, // 1
@@ -41,3 +44,6 @@ sender auto async_inclusive_scan(scheduler auto sch,            // 2
                return output;                      // 15
              });                                   // 15
 }
+
+auto main() -> int {};
+

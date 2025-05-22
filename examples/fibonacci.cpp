@@ -14,29 +14,28 @@
  * limitations under the License.
  */
 
-#if 1
-int main() {}
-#else
+
 #include <cstdlib>
+#include <numeric>
 #include <iostream>
 
-#include <stdexx.hpp>
+#include <exec/static_thread_pool.hpp>
+#include <stdexec/execution.hpp>
+
+#if 1
+auto main()->int{};
+#else
 
 long serial_fib(long n) {
   return n < 2 ? n : serial_fib(n - 1) + serial_fib(n - 2);
 }
 
-template <class... Ts>
-using any_sender_of = typename exec::any_receiver_ref<
-  stdexx::completion_signatures<Ts...>>::template any_sender<>;
-
-using fib_sender = any_sender_of<stdexx::set_value_t(long)>;
 
 template <typename Scheduler>
 struct fib_s {
-  using sender_concept = stdexx::sender_t;
+  using sender_concept = stdexec::sender_t;
   using completion_signatures =
-    stdexx::completion_signatures<stdexx::set_value_t(long)>;
+    stdexec::completion_signatures<stdexec::set_value_t(long)>;
 
   long cutoff;
   long n;
@@ -51,25 +50,25 @@ struct fib_s {
 
     void start() noexcept {
       if (this->n < this->cutoff) {
-        stdexx::set_value(static_cast<Receiver &&>(this->rcvr_),
+        stdexec::set_value(static_cast<Receiver &&>(this->rcvr_),
                           serial_fib(this->n));
       } else {
         auto mkchild = [&](long n) {
-          return stdexx::starts_on(
+          return stdexec::starts_on(
             this->sched, fib_sender(fib_s{this->cutoff, n, this->sched}));
         };
 
-        stdexx::start_detached(
-          stdexx::when_all(mkchild(this->n - 1), mkchild(this->n - 2)) |
-          stdexx::then([rcvr = static_cast<Receiver &&>(this->rcvr_)](
+        stdexec::start_detached(
+          stdexec::when_all(mkchild(this->n - 1), mkchild(this->n - 2)) |
+          stdexec::then([rcvr = static_cast<Receiver &&>(this->rcvr_)](
                          long a, long b) mutable {
-            stdexx::set_value(static_cast<Receiver &&>(rcvr), a + b);
+            stdexec::set_value(static_cast<Receiver &&>(rcvr), a + b);
           }));
       }
     }
   };
 
-  template <stdexx::receiver_of<completion_signatures> Receiver>
+  template <stdexec::receiver_of<completion_signatures> Receiver>
   operation<Receiver> connect(Receiver rcvr) {
     return {static_cast<Receiver &&>(rcvr), this->cutoff, this->n, this->sched};
   }
@@ -88,10 +87,16 @@ auto measure(F &&f) {
     .count();
 }
 
+template <class... Ts>
+using any_sender_of = typename exec::any_receiver_ref<
+  stdexx::completion_signatures<Ts...>>::template any_sender<>;
+
+using fib_sender = any_sender_of<stdexx::set_value_t(long)>;
+
 int main(int argc, char **argv) {
   if (argc < 5) {
     std::cerr
-      << "Usage: example.benchmark.fibonacci cutoff n nruns {tbb|static}"
+      << "Usage: fibonacci cutoff n nruns"
       << std::endl;
     return -1;
   }
@@ -108,28 +113,15 @@ int main(int argc, char **argv) {
     return -1;
   }
 
-  std::variant<execpools::tbb_thread_pool, exec::static_thread_pool> pool;
+  exec::static_thread_pool pool;
 
-  if (argv[4] == std::string_view("tbb")) {
-    pool.emplace<execpools::tbb_thread_pool>(
-      static_cast<int>(std::thread::hardware_concurrency()));
-  } else {
-    pool.emplace<exec::static_thread_pool>(std::thread::hardware_concurrency(),
-                                           exec::bwos_params{},
-                                           exec::get_numa_policy());
-  }
 
   std::vector<unsigned long> times;
   long result;
   for (unsigned long i = 0; i < nruns; ++i) {
-    auto snd = std::visit(
-      [&](auto &&pool) {
-        return fib_sender(fib_s{cutoff, n, pool.get_scheduler()});
-      },
-      pool);
-
+    auto snd = fib_sender(fib_s{cutoff, n, pool.get_scheduler()});
     auto time = measure<std::chrono::milliseconds>(
-      [&] { std::tie(result) = stdexx::sync_wait(std::move(snd)).value(); });
+      [&] { std::tie(result) = stdexec::sync_wait(std::move(snd)).value(); });
     times.push_back(static_cast<unsigned int>(time));
   }
 
@@ -138,5 +130,4 @@ int main(int argc, char **argv) {
                 (times.size() - warmup))
             << "ms. Result: " << result << std::endl;
 }
-
 #endif
