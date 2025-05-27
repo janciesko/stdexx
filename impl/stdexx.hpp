@@ -1,12 +1,12 @@
-#ifndef STDEXX_STDEXX_H
-#define STDEXX_STDEXX_H
+#define once
 
-// std::execution with ULT backend (X)
-
-#if defined(STDEXX_ENABLE_QTHREADS)
+#if (STDEXX_QTHREADS)
+// ULT backend
 #include <qthreads/stdexec.hpp>
+#elif(STDEXX_REFERENCE)
+// stdexec backend
+#include <stdexec/execution.hpp>
+namespace stdexx = stdexec;
 #else
-#error "Not implemented."
-#endif
-
+error "Not implemented."
 #endif

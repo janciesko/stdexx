@@ -1,6 +1,6 @@
-#ifndef STDEXX_QTHREADS_STDEXEC_H
-#define STDEXX_QTHREADS_STDEXEC_H
+#define once
 
+#include <iostream>
 #include <stdexec/execution.hpp>
 #include <stdio.h>
 
@@ -406,4 +406,3 @@ stdexec::__sync_wait::sync_wait_t::apply_sender<stdexx::qthreads_scheduler::qthr
 }
 */
 
-#endif

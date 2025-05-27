@@ -20,17 +20,19 @@
 #include <iostream>
 
 #include <exec/static_thread_pool.hpp>
-#include <stdexec/execution.hpp>
+#include <stdexx.hpp>
 
-#if 1
-auto main()->int{};
-#else
+#if (STDEXX_QTHREADS)
+
+auto main()->int{}; //todo
+
+#elif(STDEXX_REFERENCE)
 
 long serial_fib(long n) {
   return n < 2 ? n : serial_fib(n - 1) + serial_fib(n - 2);
 }
 
-
+#if 0
 template <typename Scheduler>
 struct fib_s {
   using sender_concept = stdexec::sender_t;
@@ -86,12 +88,7 @@ auto measure(F &&f) {
                                               start)
     .count();
 }
-
-template <class... Ts>
-using any_sender_of = typename exec::any_receiver_ref<
-  stdexx::completion_signatures<Ts...>>::template any_sender<>;
-
-using fib_sender = any_sender_of<stdexx::set_value_t(long)>;
+#endif
 
 int main(int argc, char **argv) {
   if (argc < 5) {
@@ -100,7 +97,7 @@ int main(int argc, char **argv) {
       << std::endl;
     return -1;
   }
-
+#if 0
   // skip 'warmup' iterations for performance measurements
   static constexpr size_t warmup = 1;
 
@@ -113,15 +110,17 @@ int main(int argc, char **argv) {
     return -1;
   }
 
-  exec::static_thread_pool pool;
+  exec::static_thread_pool pool{8};
+  stdexx::scheduler auto sched = pool.get_scheduler(); 
 
 
   std::vector<unsigned long> times;
   long result;
   for (unsigned long i = 0; i < nruns; ++i) {
-    auto snd = fib_sender(fib_s{cutoff, n, pool.get_scheduler()});
+    stdexx::sender auto begin = stdexx::schedule(sched); 
+    auto snd = stdexx::then(begin,fib_s{cutoff, n, pool.get_scheduler()});
     auto time = measure<std::chrono::milliseconds>(
-      [&] { std::tie(result) = stdexec::sync_wait(std::move(snd)).value(); });
+      [&] { auto [result] = stdexx::sync_wait(std::move(snd)).value(); });
     times.push_back(static_cast<unsigned int>(time));
   }
 
@@ -129,5 +128,9 @@ int main(int argc, char **argv) {
             << (std::accumulate(times.begin() + warmup, times.end(), 0u) /
                 (times.size() - warmup))
             << "ms. Result: " << result << std::endl;
+
+  #endif
 }
+#else
+error "Not implemented."
 #endif
