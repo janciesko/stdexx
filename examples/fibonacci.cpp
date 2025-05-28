@@ -32,26 +32,26 @@ long serial_fib(long n) {
   return n < 2 ? n : serial_fib(n - 1) + serial_fib(n - 2);
 }
 
-#if 0
-template <typename Scheduler>
+
+//template <typename Scheduler>
 struct fib_s {
   using sender_concept = stdexec::sender_t;
-  using completion_signatures =
-    stdexec::completion_signatures<stdexec::set_value_t(long)>;
+  using completion_signatures = stdexec::
+    completion_signatures<stdexec::set_value_t(long), stdexec::set_error_t(std::exception_ptr)>;
 
-  long cutoff;
-  long n;
-  Scheduler sched;
+ // long cutoff;
+ // long n;
+  //Scheduler sched;
 
   template <class Receiver>
-  struct operation {
-    Receiver rcvr_;
-    long cutoff;
-    long n;
-    Scheduler sched;
+  struct op {
+    //Receiver rcvr_;
+   // long cutoff;
+   // long n;
+    //Scheduler sched;
 
-    void start() noexcept {
-      if (this->n < this->cutoff) {
+    void start() & noexcept {
+     /* if (this->n < this->cutoff) {
         stdexec::set_value(static_cast<Receiver &&>(this->rcvr_),
                           serial_fib(this->n));
       } else {
@@ -66,18 +66,24 @@ struct fib_s {
                          long a, long b) mutable {
             stdexec::set_value(static_cast<Receiver &&>(rcvr), a + b);
           }));
-      }
+      }*/
     }
   };
+        template <class Receiver>
+  friend auto tag_invoke(stdexec::connect_t, fib_s, Receiver r) -> op<Receiver> {
+    return {std::move(r)};
 
-  template <stdexec::receiver_of<completion_signatures> Receiver>
-  operation<Receiver> connect(Receiver rcvr) {
-    return {static_cast<Receiver &&>(rcvr), this->cutoff, this->n, this->sched};
   }
-};
+  };
 
+ /* template <stdexec::receiver_of<completion_signatures> Receiver>
+  op<Receiver> connect(Receiver rcvr) {
+    return {static_cast<Receiver &&>(rcvr), this->cutoff, this->n, this->sched};
+  }*/
+};
+/*
 template <class Scheduler>
-fib_s(long cutoff, long n, Scheduler sched) -> fib_s<Scheduler>;
+fib_s(long cutoff, long n, Scheduler sched) -> fib_s<Scheduler>;*/
 
 template <typename duration, typename F>
 auto measure(F &&f) {
@@ -88,7 +94,9 @@ auto measure(F &&f) {
                                               start)
     .count();
 }
-#endif
+
+auto fib_test(){return 1;}
+
 
 int main(int argc, char **argv) {
   if (argc < 5) {
@@ -97,7 +105,7 @@ int main(int argc, char **argv) {
       << std::endl;
     return -1;
   }
-#if 0
+
   // skip 'warmup' iterations for performance measurements
   static constexpr size_t warmup = 1;
 
@@ -113,14 +121,13 @@ int main(int argc, char **argv) {
   exec::static_thread_pool pool{8};
   stdexx::scheduler auto sched = pool.get_scheduler(); 
 
-
   std::vector<unsigned long> times;
   long result;
   for (unsigned long i = 0; i < nruns; ++i) {
-    stdexx::sender auto begin = stdexx::schedule(sched); 
-    auto snd = stdexx::then(begin,fib_s{cutoff, n, pool.get_scheduler()});
+    stdexec::sender auto begin = stdexec::schedule(sched); 
+    stdexec::sender auto fib = stdexec::then(begin,fib_s{/*cutoff, n, sched*/});
     auto time = measure<std::chrono::milliseconds>(
-      [&] { auto [result] = stdexx::sync_wait(std::move(snd)).value(); });
+      [&] { auto [result] = stdexx::sync_wait(std::move(fib)).value(); });
     times.push_back(static_cast<unsigned int>(time));
   }
 
@@ -129,7 +136,6 @@ int main(int argc, char **argv) {
                 (times.size() - warmup))
             << "ms. Result: " << result << std::endl;
 
-  #endif
 }
 #else
 error "Not implemented."
