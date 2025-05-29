@@ -32,7 +32,6 @@ long serial_fib(long n) {
   return n < 2 ? n : serial_fib(n - 1) + serial_fib(n - 2);
 }
 
-
 //template <typename Scheduler>
 struct fib_s {
   using sender_concept = stdexec::sender_t;
@@ -80,7 +79,6 @@ struct fib_s {
   op<Receiver> connect(Receiver rcvr) {
     return {static_cast<Receiver &&>(rcvr), this->cutoff, this->n, this->sched};
   }*/
-};
 /*
 template <class Scheduler>
 fib_s(long cutoff, long n, Scheduler sched) -> fib_s<Scheduler>;*/
@@ -122,10 +120,14 @@ int main(int argc, char **argv) {
   stdexx::scheduler auto sched = pool.get_scheduler(); 
 
   std::vector<unsigned long> times;
-  long result;
+  long result = 0;
   for (unsigned long i = 0; i < nruns; ++i) {
-    stdexec::sender auto begin = stdexec::schedule(sched); 
-    stdexec::sender auto fib = stdexec::then(begin,fib_s{/*cutoff, n, sched*/});
+    stdexx::sender auto begin = stdexec::schedule(sched); 
+    /*stdexx::sender auto test = stdexx::just();
+    stdexec::sender auto fib = test::then(test,[](){return 1;});*/
+    
+    /*Not sure what the concept needs*/
+    stdexec::sender auto fib = stdexec::then(begin,fib_s{});
     auto time = measure<std::chrono::milliseconds>(
       [&] { auto [result] = stdexx::sync_wait(std::move(fib)).value(); });
     times.push_back(static_cast<unsigned int>(time));

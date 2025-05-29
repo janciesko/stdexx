@@ -12,19 +12,20 @@ struct my_sender {
   using completion_signatures = stdexec::
     completion_signatures<stdexec::set_value_t(int)>;
 
-  template <class R>
+  template <class Receiver>
   struct op {
-    R rcv;
+    Receiver rcv;
     void start() & noexcept {      
         std::printf("success!\n");
         stdexec::set_value(std::move(rcv), 42);
     }
   };
 
-  template <class R>
-  friend auto tag_invoke(stdexec::connect_t, my_sender, R rcv) -> op<R> {
+  template <class Receiver>
+  friend auto tag_invoke(stdexec::connect_t, my_sender, Receiver rcv) -> op<Receiver> {
     return {std::move(rcv)};
   }
+
 };
 
 auto main() -> int {
@@ -32,6 +33,8 @@ auto main() -> int {
   auto [a] = stdexec::sync_wait(std::move(algorithm)).value();
   return (a == 42) ? 1: 0;
 }
+
+
 
 #else
 error "Not implemented."
