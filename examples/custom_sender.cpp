@@ -1,9 +1,9 @@
 #include <stdexx.hpp>
 #include <cstdio>
 
-#if (STDEXX_QTHREADS)
+#if(STDEXX_QTHREADS)
 
-//tbd
+auto main() -> int {}
 
 #elif(STDEXX_REFERENCE)
 
@@ -33,8 +33,6 @@ auto main() -> int {
   auto [a] = stdexec::sync_wait(std::move(algorithm)).value();
   return (a == 42) ? 1: 0;
 }
-
-
 
 #else
 error "Not implemented."

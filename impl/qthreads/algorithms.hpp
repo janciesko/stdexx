@@ -1,7 +1,7 @@
 namespace test {
 
 #pragma once
-#include <algorithms/then.hpp>
-#include <algorithms/retry.hpp>
+#include <reference/algorithms/then.hpp>
+#include <reference/algorithms/retry.hpp>
 
 } // namespace test

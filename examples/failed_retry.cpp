@@ -3,7 +3,7 @@
 
 #if (STDEXX_QTHREADS)
 
-//tbd
+auto main() -> int {}
 
 #elif(STDEXX_REFERENCE)
 

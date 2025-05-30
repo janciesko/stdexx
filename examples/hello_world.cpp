@@ -2,20 +2,29 @@
 #include <iostream>
 
 #include <stdexx.hpp>
-#include "exec/static_thread_pool.hpp"
 
 #if (STDEXX_QTHREADS)
 
-int main() {
+auto main() -> int {
   stdexx::init();
+  stdexec::sender auto my_sender = stdexec::schedule(stdexx::qthreads_scheduler{});
+
+  /*----------*/
+  //ISSUE: Sync hangs
+  //stdexec::sender auto new_task = stdexec::then(my_sender, [](int arg) {return 1;}); 
+  /*----------*/
+
   auto val =
-    stdexec::sync_wait(stdexec::schedule(stdexx::qthreads_scheduler{})).value();
+    stdexec::sync_wait(new_task).value();
   std::cout << std::get<0>(val) << std::endl;
   stdexx::finalize();
   return 0;
 }
 
 #elif(STDEXX_REFERENCE)
+
+#include "exec/static_thread_pool.hpp"
+
 int main()
 {  
   using namespace stdexx;

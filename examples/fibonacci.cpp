@@ -123,6 +123,8 @@ int main(int argc, char **argv) {
   long result = 0;
   for (unsigned long i = 0; i < nruns; ++i) {
     stdexx::sender auto begin = stdexec::schedule(sched); 
+
+    /*Thus work*/
     /*stdexx::sender auto test = stdexx::just();
     stdexec::sender auto fib = test::then(test,[](){return 1;});*/
     
