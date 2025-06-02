@@ -29,7 +29,8 @@ struct my_sender {
 };
 
 auto main() -> int {
-  auto algorithm = stdexx::then(stdexx::just(), my_sender{});
+  //auto algorithm = stdexx::then(stdexx::just(), my_sender{});
+  auto algorithm = my_sender{};
   auto [a] = stdexec::sync_wait(std::move(algorithm)).value();
   return (a == 42) ? 1: 0;
 }
