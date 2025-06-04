@@ -1,16 +1,17 @@
-#include <stdexx.hpp>
 #include <cstdio>
+#include <stdexx.hpp>
 
 #if (STDEXX_QTHREADS)
 
 auto main() -> int {}
 
-#elif(STDEXX_REFERENCE)
+#elif (STDEXX_REFERENCE)
 
 struct fail_some {
   using sender_concept = stdexec::sender_t;
-  using completion_signatures = stdexec::
-    completion_signatures<stdexec::set_value_t(int), stdexec::set_error_t(std::exception_ptr)>;
+  using completion_signatures =
+    stdexec::completion_signatures<stdexec::set_value_t(int),
+                                   stdexec::set_error_t(std::exception_ptr)>;
 
   template <class R>
   struct op {
@@ -41,7 +42,7 @@ auto main() -> int {
   //   fail!
   //   success!
   auto [a] = stdexec::sync_wait(std::move(x)).value();
-  (void) a;
+  (void)a;
 }
 
 #else

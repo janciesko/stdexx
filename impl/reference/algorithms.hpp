@@ -2,7 +2,7 @@
 
 namespace test {
 
-#include <reference/algorithms/then.hpp>
 #include <reference/algorithms/retry.hpp>
+#include <reference/algorithms/then.hpp>
 
 } // namespace test

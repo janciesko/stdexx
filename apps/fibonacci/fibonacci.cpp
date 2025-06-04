@@ -14,19 +14,18 @@
  * limitations under the License.
  */
 
-
 #include <cstdlib>
-#include <numeric>
 #include <iostream>
+#include <numeric>
 
 #include <exec/static_thread_pool.hpp>
 #include <stdexx.hpp>
 
 #if (STDEXX_QTHREADS)
 
-auto main()->int{}; //todo
+auto main() -> int {}; // todo
 
-#elif(STDEXX_REFERENCE)
+#elif (STDEXX_REFERENCE)
 
 #include <exec/any_sender_of.hpp>
 
@@ -35,15 +34,16 @@ auto serial_fib(long n) -> long {
 }
 
 template <class... Ts>
-using any_sender_of =
-  typename exec::any_receiver_ref<stdexec::completion_signatures<Ts...>>::template any_sender<>;
+using any_sender_of = typename exec::any_receiver_ref<
+  stdexec::completion_signatures<Ts...>>::template any_sender<>;
 
 using fib_sender = any_sender_of<stdexec::set_value_t(long)>;
 
 template <typename Scheduler>
 struct fib_s {
   using sender_concept = stdexec::sender_t;
-  using completion_signatures = stdexec::completion_signatures<stdexec::set_value_t(long)>;
+  using completion_signatures =
+    stdexec::completion_signatures<stdexec::set_value_t(long)>;
 
   long cutoff;
   long n;
@@ -52,7 +52,7 @@ struct fib_s {
   /*
   - Op state is templated on receiver (callback)
   - Has start
-  - Calls set_value on (rcv, value) synchronously 
+  - Calls set_value on (rcv, value) synchronously
   - This uses compatible completion signature to provide value to rcv
   - This will invoke scheduler to invoke next sender (the recv is the glue)
   */
@@ -65,16 +65,17 @@ struct fib_s {
 
     void start() & noexcept {
       if (n < cutoff) {
-        stdexec::set_value(static_cast<Receiver&&>(rcvr_), serial_fib(n));
+        stdexec::set_value(static_cast<Receiver &&>(rcvr_), serial_fib(n));
       } else {
         auto mkchild = [&](long n) {
           return stdexec::starts_on(sched, fib_sender(fib_s{cutoff, n, sched}));
         };
 
         stdexec::start_detached(
-          stdexec::when_all(mkchild(n - 1), mkchild(n - 2))
-          | stdexec::then([rcvr = static_cast<Receiver&&>(rcvr_)](long a, long b) mutable {
-              stdexec::set_value(static_cast<Receiver&&>(rcvr), a + b);
+          stdexec::when_all(mkchild(n - 1), mkchild(n - 2)) |
+          stdexec::then(
+            [rcvr = static_cast<Receiver &&>(rcvr_)](long a, long b) mutable {
+              stdexec::set_value(static_cast<Receiver &&>(rcvr), a + b);
             }));
       }
     }
@@ -82,14 +83,17 @@ struct fib_s {
 
   /*
   - Scheduler invokes sender via the tag invoke
-  - Invoke accepts args: connect_t, self, and recv (recv is provided by the sender adapter)
-  - Returns an op state intance, initialized with rcv. 
+  - Invoke accepts args: connect_t, self, and recv (recv is provided by the
+  sender adapter)
+  - Returns an op state intance, initialized with rcv.
   - ! The initialization of op sets the rcv (callback)
   - ! The callback is called on completion of op::start
   */
   template <stdexec::receiver_of<completion_signatures> Receiver>
-  friend auto tag_invoke(stdexec::connect_t, fib_s self, Receiver rcvr) -> operation<Receiver> {
-    return {static_cast<Receiver&&>(rcvr), self.cutoff, self.n, self.sched};
+  friend auto tag_invoke(stdexec::connect_t,
+                         fib_s self,
+                         Receiver rcvr) -> operation<Receiver> {
+    return {static_cast<Receiver &&>(rcvr), self.cutoff, self.n, self.sched};
   }
 };
 
@@ -97,17 +101,18 @@ template <class Scheduler>
 fib_s(long cutoff, long n, Scheduler sched) -> fib_s<Scheduler>;
 
 template <typename duration, typename F>
-auto measure(F&& f) {
-  std::chrono::steady_clock::time_point start = std::chrono::steady_clock::now();
+auto measure(F &&f) {
+  std::chrono::steady_clock::time_point start =
+    std::chrono::steady_clock::now();
   f();
-  return std::chrono::duration_cast<duration>(std::chrono::steady_clock::now() - start).count();
+  return std::chrono::duration_cast<duration>(std::chrono::steady_clock::now() -
+                                              start)
+    .count();
 }
 
 int main(int argc, char **argv) {
   if (argc < 5) {
-    std::cerr
-      << "Usage: fibonacci cutoff n nruns"
-      << std::endl;
+    std::cerr << "Usage: fibonacci cutoff n nruns" << std::endl;
     return -1;
   }
 
@@ -125,11 +130,10 @@ int main(int argc, char **argv) {
 
   exec::static_thread_pool pool{8};
 
-
   std::vector<unsigned long> times;
   long result = 0;
   for (unsigned long i = 0; i < nruns; ++i) {
-  auto fib =  fib_sender(fib_s{cutoff, n, pool.get_scheduler()});
+    auto fib = fib_sender(fib_s{cutoff, n, pool.get_scheduler()});
     auto time = measure<std::chrono::milliseconds>(
       [&] { auto [result] = stdexx::sync_wait(std::move(fib)).value(); });
     times.push_back(static_cast<unsigned int>(time));
@@ -139,7 +143,6 @@ int main(int argc, char **argv) {
             << (std::accumulate(times.begin() + warmup, times.end(), 0u) /
                 (times.size() - warmup))
             << "ms. Result: " << result << std::endl;
-
 }
 #else
 error "Not implemented."

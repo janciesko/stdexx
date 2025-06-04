@@ -25,7 +25,7 @@ double run(size_t n, size_t num_threads, double x) {
                          for (int i = begin; i <= end; i++) {
                            double e = i + 1;
                            double term =
-                               std::pow(-1.0, e + 1) * std::pow(x, e) / e;
+                             std::pow(-1.0, e + 1) * std::pow(x, e) / e;
                            partial_sum += term;
                          }
                          partial_results[i] = partial_sum;
@@ -40,7 +40,7 @@ double run(size_t n, size_t num_threads, double x) {
   return result;
 }
 
-int main(int args, char** argv) {
+int main(int args, char **argv) {
   size_t threads = std::stoi(argv[3]);
   double x = std::stod(argv[2]);
   size_t n = std::stoi(argv[1]);
