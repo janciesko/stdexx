@@ -28,72 +28,67 @@ auto main()->int{}; //todo
 
 #elif(STDEXX_REFERENCE)
 
-long serial_fib(long n) {
+#include <exec/any_sender_of.hpp>
+
+auto serial_fib(long n) -> long {
   return n < 2 ? n : serial_fib(n - 1) + serial_fib(n - 2);
 }
 
-//template <typename Scheduler>
+template <class... Ts>
+using any_sender_of =
+  typename exec::any_receiver_ref<stdexec::completion_signatures<Ts...>>::template any_sender<>;
+
+using fib_sender = any_sender_of<stdexec::set_value_t(long)>;
+
+template <typename Scheduler>
 struct fib_s {
   using sender_concept = stdexec::sender_t;
-  using completion_signatures = stdexec::
-    completion_signatures<stdexec::set_value_t(long), stdexec::set_error_t(std::exception_ptr)>;
+  using completion_signatures = stdexec::completion_signatures<stdexec::set_value_t(long)>;
 
- // long cutoff;
- // long n;
-  //Scheduler sched;
+  long cutoff;
+  long n;
+  Scheduler sched;
 
   template <class Receiver>
-  struct op {
-    //Receiver rcvr_;
-   // long cutoff;
-   // long n;
-    //Scheduler sched;
+  struct operation {
+    Receiver rcvr_;
+    long cutoff;
+    long n;
+    Scheduler sched;
 
     void start() & noexcept {
-     /* if (this->n < this->cutoff) {
-        stdexec::set_value(static_cast<Receiver &&>(this->rcvr_),
-                          serial_fib(this->n));
+      if (n < cutoff) {
+        stdexec::set_value(static_cast<Receiver&&>(rcvr_), serial_fib(n));
       } else {
         auto mkchild = [&](long n) {
-          return stdexec::starts_on(
-            this->sched, fib_sender(fib_s{this->cutoff, n, this->sched}));
+          return stdexec::starts_on(sched, fib_sender(fib_s{cutoff, n, sched}));
         };
 
         stdexec::start_detached(
-          stdexec::when_all(mkchild(this->n - 1), mkchild(this->n - 2)) |
-          stdexec::then([rcvr = static_cast<Receiver &&>(this->rcvr_)](
-                         long a, long b) mutable {
-            stdexec::set_value(static_cast<Receiver &&>(rcvr), a + b);
-          }));
-      }*/
+          stdexec::when_all(mkchild(n - 1), mkchild(n - 2))
+          | stdexec::then([rcvr = static_cast<Receiver&&>(rcvr_)](long a, long b) mutable {
+              stdexec::set_value(static_cast<Receiver&&>(rcvr), a + b);
+            }));
+      }
     }
   };
-        template <class Receiver>
-  friend auto tag_invoke(stdexec::connect_t, fib_s, Receiver r) -> op<Receiver> {
-    return {std::move(r)};
 
+  template <stdexec::receiver_of<completion_signatures> Receiver>
+  friend auto tag_invoke(stdexec::connect_t, fib_s self, Receiver rcvr) -> operation<Receiver> {
+    return {static_cast<Receiver&&>(rcvr), self.cutoff, self.n, self.sched};
   }
-  };
+};
 
- /* template <stdexec::receiver_of<completion_signatures> Receiver>
-  op<Receiver> connect(Receiver rcvr) {
-    return {static_cast<Receiver &&>(rcvr), this->cutoff, this->n, this->sched};
-  }*/
-/*
 template <class Scheduler>
-fib_s(long cutoff, long n, Scheduler sched) -> fib_s<Scheduler>;*/
+fib_s(long cutoff, long n, Scheduler sched) -> fib_s<Scheduler>;
 
 template <typename duration, typename F>
-auto measure(F &&f) {
-  std::chrono::steady_clock::time_point start =
-    std::chrono::steady_clock::now();
+auto measure(F&& f) {
+  std::chrono::steady_clock::time_point start = std::chrono::steady_clock::now();
   f();
-  return std::chrono::duration_cast<duration>(std::chrono::steady_clock::now() -
-                                              start)
-    .count();
+  return std::chrono::duration_cast<duration>(std::chrono::steady_clock::now() - start).count();
 }
 
-auto fib_test(){return 1;}
 
 
 int main(int argc, char **argv) {
@@ -117,19 +112,12 @@ int main(int argc, char **argv) {
   }
 
   exec::static_thread_pool pool{8};
-  stdexx::scheduler auto sched = pool.get_scheduler(); 
+
 
   std::vector<unsigned long> times;
   long result = 0;
   for (unsigned long i = 0; i < nruns; ++i) {
-    stdexx::sender auto begin = stdexec::schedule(sched); 
-
-    /*Thus work*/
-    /*stdexx::sender auto test = stdexx::just();
-    stdexec::sender auto fib = test::then(test,[](){return 1;});*/
-    
-    /*Not sure what the concept needs*/
-    stdexec::sender auto fib = stdexec::then(begin,fib_s{});
+  auto fib =  fib_sender(fib_s{cutoff, n, pool.get_scheduler()});
     auto time = measure<std::chrono::milliseconds>(
       [&] { auto [result] = stdexx::sync_wait(std::move(fib)).value(); });
     times.push_back(static_cast<unsigned int>(time));
