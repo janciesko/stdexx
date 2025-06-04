@@ -7,7 +7,7 @@ auto main() -> int {}
 
 #elif(STDEXX_REFERENCE)
 
-struct my_sender {
+struct sender {
   using sender_concept = stdexec::sender_t;
   using completion_signatures = stdexec::
     completion_signatures<stdexec::set_value_t(int)>;
@@ -36,14 +36,14 @@ struct my_sender {
   - ! The callback is called on completion of the op::start
   */
   template <class Receiver>
-  friend auto tag_invoke(stdexec::connect_t, my_sender, Receiver rcv) -> op<Receiver> {
+  friend auto tag_invoke(stdexec::connect_t, sender, Receiver rcv) -> op<Receiver> {
     return {std::move(rcv)};
   }
 
 };
 
 auto main() -> int {
-  auto my_sender = my_sender{};
+  auto my_sender = sender{};
   auto [a] = stdexec::sync_wait(std::move(my_sender)).value();
   return (a == 42) ? 1: 0;
 }

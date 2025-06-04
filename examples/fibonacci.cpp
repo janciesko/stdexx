@@ -103,8 +103,6 @@ auto measure(F&& f) {
   return std::chrono::duration_cast<duration>(std::chrono::steady_clock::now() - start).count();
 }
 
-
-
 int main(int argc, char **argv) {
   if (argc < 5) {
     std::cerr
