@@ -3,18 +3,11 @@
 //  SPDX-License-Identifier: BSL-1.0
 //  Distributed under the Boost Software License, Version 1.0. (See accompanying
 //  file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
-#include <hpx/execution.hpp>
-#include <hpx/execution/algorithms/sync_wait.hpp>
-#include <hpx/execution_base/sender.hpp>
-#include <hpx/hpx.hpp>
-#include <hpx/hpx_main.hpp>
 
-using namespace hpx::execution::experimental;
+#include <stdexx.hpp>
 
 template <typename T>
 concept sender = is_sender_v<T>;
-
-namespace tt = hpx::this_thread::experimental;
 
 double run(size_t n, size_t num_threads, double x) {
   thread_pool_scheduler sch{};
@@ -43,7 +36,7 @@ double run(size_t n, size_t num_threads, double x) {
                       sum += partial_results[i];
                     return sum;
                   });
-  auto result = hpx::get<0>(*tt::sync_wait(std::move(s)));
+  auto result = hpx::get<0>(*stdexec::sync_wait(std::move(s)));
   return result;
 }
 

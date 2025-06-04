@@ -32,8 +32,8 @@ struct sender {
   - Scheduler invokes sender via the tag invoke
   - Invoke accepts args: connect_t, self, and rcv (rcv is provided by the sender adapter)
   - Returns an op state intance, initialized with rcv. 
-  - ! The initialization of op sets of the rcv (callback)
-  - ! The callback is called on completion of the op::start
+  - ! The initialization of op sets the rcv (callback)
+  - ! The callback is called on completion of op::start
   */
   template <class Receiver>
   friend auto tag_invoke(stdexec::connect_t, sender, Receiver rcv) -> op<Receiver> {
