@@ -7,6 +7,7 @@ auto main() -> int {}
 
 #elif (STDEXX_REFERENCE)
 
+
 struct sender {
   using sender_concept = stdexec::sender_t;
   using completion_signatures =
@@ -22,7 +23,6 @@ struct sender {
   template <class Receiver>
   struct op {
     Receiver rcv;
-
     void start() & noexcept {
       std::printf("success!\n");
       stdexec::set_value(std::move(rcv), 42);
@@ -39,14 +39,21 @@ struct sender {
   */
   template <class Receiver>
   friend auto
-  tag_invoke(stdexec::connect_t, sender, Receiver rcv) -> op<Receiver> {
+  tag_invoke(stdexx::connect_t, sender, Receiver rcv) -> op<Receiver> {
     return {std::move(rcv)};
   }
 };
 
 auto main() -> int {
+
+  /*Sync_wait*/
   auto my_sender = sender{};
-  auto [a] = stdexec::sync_wait(std::move(my_sender)).value();
+  auto [a] = stdexx::sync_wait(std::move(my_sender)).value();
+
+  /*Via connect*/
+  auto op = stdexx::connect(sender{}, empty_recv::expect_value_receiver{10});
+  ex::start(op);
+
   return (a == 42) ? 1 : 0;
 }
 

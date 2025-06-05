@@ -1,6 +1,6 @@
 #include <cstdlib>
 #include <iostream>
-
+#include "exec/static_thread_pool.hpp"
 #include <stdexx.hpp>
 
 #if (STDEXX_QTHREADS)
@@ -65,7 +65,7 @@ auto main() -> int {
 
 #elif (STDEXX_REFERENCE)
 
-#include "exec/static_thread_pool.hpp"
+
 
 auto main() -> int {
   using namespace stdexx;

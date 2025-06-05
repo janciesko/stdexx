@@ -2,9 +2,11 @@
 
 #pragma once
 
+namespace test {
+
 using namespace stdexec::tags;
 
-///////////////////////////////////////////////////////////////////////////////
+
 // then algorithm:
 template <class R, class F>
 class _then_receiver :
@@ -79,3 +81,5 @@ template <stdexec::sender S, class F>
 auto then(S s, F f) -> stdexec::sender auto {
   return _then_sender<S, F>{static_cast<S &&>(s), static_cast<F &&>(f)};
 }
+
+} //namespace test

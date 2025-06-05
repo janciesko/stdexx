@@ -17,7 +17,7 @@ list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/modules")
 include("${CMAKE_CURRENT_SOURCE_DIR}/modules/flags.cmake")
 
 option(ENABLE_BUILD_APPS "Build cgsolve example" OFF)
-option(ENABLE_BUILD_EXAMPLES "Build fibonacci example" OFF)
+option(ENABLE_BUILD_EXAMPLES "Build fibonacci example" ON)
 
 set(EXEC_BACKEND qthreads CACHE STRING "Backend to use, options are 'reference', 'qthreads', and 'argobots'.")
 
@@ -43,6 +43,8 @@ else ()
 endif()
 
 find_package(stdexec REQUIRED)
+
+find_package(Catch2 3 REQUIRED)
 
 add_subdirectory(impl)
 
