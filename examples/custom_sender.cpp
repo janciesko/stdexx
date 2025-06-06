@@ -49,7 +49,7 @@ auto main() -> int {
 
   /*Via connect*/
   auto op = stdexec::connect(my_sender, empty_recv::expect_value_receiver{42});
-  ex::start(op);
+  stdexec::start(op);
 
   return (a == 42) ? 1 : 0;
 }

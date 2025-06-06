@@ -2,12 +2,9 @@
 
 #include <catch2/catch_all.hpp>
 
-// #define CHECK_TRUE(X) assert(X == true)
-// #define FAIL_CHECK(X) error "X"
+namespace empty_recv {
 
 namespace ex = stdexec;
-
-namespace empty_recv {
 
 #if defined(__clang__) && defined(__cpp_lib_tuple_like)
 #define CHECK_TUPLE(...) CHECK((__VA_ARGS__))
