@@ -117,7 +117,7 @@ struct expect_value_receiver : base_expect_receiver<Env> {
     base_expect_receiver<Env>(std::move(env)), values_(std::move(vals)...) {}
 
   void set_value(Ts const &...vals) noexcept {
-    CHECK(values_ == std::tie(vals...));
+    CHECK_TUPLE(values_ == std::tie(vals...));
     this->set_called();
   }
 

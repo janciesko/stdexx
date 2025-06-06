@@ -1,11 +1,7 @@
-
-
 #pragma once
 
 namespace test {
-
 using namespace stdexec::tags;
-
 
 // then algorithm:
 template <class R, class F>
@@ -29,6 +25,7 @@ public:
     try {
       stdexec::set_value(
         std::move(*this).base(),
+        // Execute callback (f)
         std::invoke(static_cast<F &&>(f_), static_cast<As &&>(as)...));
     } catch (...) {
       stdexec::set_error(std::move(*this).base(), std::current_exception());
@@ -67,6 +64,7 @@ struct _then_sender {
   template <stdexec::receiver R>
     requires stdexec::sender_to<S, _then_receiver<R, F>>
   auto connect(R r) && {
+    // return parent sender
     return stdexec::connect(
       static_cast<S &&>(s_),
       _then_receiver<R, F>{static_cast<R &&>(r), static_cast<F &&>(f_)});
@@ -77,9 +75,11 @@ struct _then_sender {
   }
 };
 
+// then registers f as a callback to the completion of s
+//  f will become a receivr_adapter
 template <stdexec::sender S, class F>
 auto then(S s, F f) -> stdexec::sender auto {
   return _then_sender<S, F>{static_cast<S &&>(s), static_cast<F &&>(f)};
 }
 
-} //namespace test
+} // namespace test

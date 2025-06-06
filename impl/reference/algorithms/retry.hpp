@@ -113,4 +113,4 @@ auto retry(S s) -> stdexec::sender auto {
   return _retry_sender{static_cast<S &&>(s)};
 }
 
-} //namespace test
+} // namespace test

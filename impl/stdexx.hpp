@@ -2,12 +2,12 @@
 
 #if (STDEXX_QTHREADS)
 // ULT backend
-#include <qthreads/stdexec.hpp>
 #include <qthreads/algorithms.hpp>
-#elif(STDEXX_REFERENCE)
+#include <qthreads/stdexec.hpp>
+#elif (STDEXX_REFERENCE)
 // stdexec backend
-#include <stdexec/execution.hpp>
 #include <reference/algorithms.hpp>
+#include <stdexec/execution.hpp>
 namespace stdexx = stdexec;
 #else
 error "Not implemented."

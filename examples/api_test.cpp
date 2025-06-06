@@ -1,6 +1,6 @@
+#include "exec/static_thread_pool.hpp"
 #include <cstdlib>
 #include <iostream>
-#include "exec/static_thread_pool.hpp"
 #include <stdexx.hpp>
 
 #if (STDEXX_QTHREADS)
@@ -18,8 +18,10 @@ struct example_two {
   example_two() {
     stdexec::sender auto my_sender =
       stdexec::schedule(stdexx::qthreads_scheduler{});
-    stdexec::sender auto algorithm =
-      stdexec::then(my_sender, [](int arg) { return 1; });
+    stdexec::sender auto algorithm = stdexec::then(my_sender, [](int arg) {
+      std::puts("Hello from user-level thread in then-lambda");
+      return 1;
+    });
 
     auto val = stdexec::sync_wait(algorithm).value();
     std::cout << std::get<0>(val) << std::endl;
@@ -31,8 +33,7 @@ struct example_three {
     stdexec::sender auto s =
       stdexec::schedule(stdexx::qthreads_scheduler{}) |
       stdexec::then([](int arg) {
-        std::cout << "Hello from user-level thread in then-functor!"
-                  << std::endl;
+        std::puts("Hello from user-level thread in then-lambda");
       }) |
       stdexec::bulk(stdexec::par, 20, [](int i) {
         std::cout << "Hello from user-level thread in bulk!(i=" << i << ")"
@@ -42,30 +43,29 @@ struct example_three {
   }
 };
 
+/*
 struct example_four {
   example_four() {
-   /* auto snd = stdexec::schedule(thread_pool.scheduler()) |
+    auto snd = stdexec::schedule(thread_pool.scheduler()) |
                stdexec::then([] { return 123; }) |
                stdexec::continues_on(stdexx::qthreads_scheduler{}) |
                stdexec::then([](int i) { return 123 * 5; }) |
                stdexec::continues_on(thread_pool.scheduler()) |
                stdexec::then([](int i) { return i - 5; });
-    auto [result] = stdexec::sync_wait(snd).value();*/
+    auto [result] = stdexec::sync_wait(snd).value();
   } // result == 610
-};
+};*/
 
 auto main() -> int {
   stdexx::init();
   using types =
-    std::variant<example_one, example_two, example_three, example_four>;
+    std::variant<example_one, example_two, example_three /*, example_four*/>;
   std::vector<types> v = {{}, {}, {}, {}, {}};
   stdexx::finalize();
   return 0;
 }
 
 #elif (STDEXX_REFERENCE)
-
-
 
 auto main() -> int {
   using namespace stdexx;

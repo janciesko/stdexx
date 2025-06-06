@@ -54,7 +54,7 @@ struct fib_s {
   - Has start
   - Calls set_value on (rcv, value) synchronously
   - This uses compatible completion signature to provide value to rcv
-  - This will invoke scheduler to invoke next sender (the recv is the glue)
+  - This will mark completion of sender (the  recv is the callback
   */
   template <class Receiver>
   struct operation {

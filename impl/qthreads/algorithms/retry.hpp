@@ -19,6 +19,8 @@
 // Pull in the reference implementation of P2300:
 #include <stdexec/execution.hpp>
 
+namespace test {
+
 template <class From, class To>
 using _copy_cvref_t = stdexec::__copy_cvref_t<From, To>;
 
@@ -129,3 +131,5 @@ template <stdexec::sender S>
 auto retry(S s) -> stdexec::sender auto {
   return _retry_sender{static_cast<S &&>(s)};
 }
+
+} // namespace test
