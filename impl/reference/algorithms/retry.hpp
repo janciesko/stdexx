@@ -97,8 +97,8 @@ struct _retry_sender {
     return {};
   }
 
-template <stdexec::receiver R>
-  auto connect(R r) noexcept -> _op<S, R>  {
+  template <stdexec::receiver R>
+  auto connect(R r) noexcept -> _op<S, R> {
     return {static_cast<S &&>(s_), static_cast<R &&>(r)};
   }
 

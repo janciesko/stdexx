@@ -1,9 +1,9 @@
 #define once
 
 #include <iostream>
+#include <memory>
 #include <stdexec/execution.hpp>
 #include <stdio.h>
-#include <memory>
 
 #include <qthread/qloop.h>
 #include <qthread/qthread.h>
@@ -12,32 +12,24 @@ namespace stdexx {
 
 namespace ex = stdexec;
 
-int context_init() { 
-  return qthread_initialize(); 
-}
-void context_finalize() { 
-  qthread_finalize(); 
-}
+int context_init() { return qthread_initialize(); }
+
+void context_finalize() { qthread_finalize(); }
 
 struct qthreads_context {
-struct qthreads{};
-std::shared_ptr<qthreads> ctx = std::make_shared<qthreads>();
-qthreads_context(){
-  context_init();
-}
-~qthreads_context(){
-  if(ctx.use_count() == 1)
-    context_finalize();
-}
+  struct qthreads {};
 
-qthreads_context(const qthreads_context & other):ctx(other.ctx)
-{}
+  std::shared_ptr<qthreads> ctx = std::make_shared<qthreads>();
 
-qthreads_context& operator=(const qthreads_context && other)
-{
-  return *this;
-}
+  qthreads_context() { context_init(); }
 
+  ~qthreads_context() {
+    if (ctx.use_count() == 1) context_finalize();
+  }
+
+  qthreads_context(qthreads_context const &other): ctx(other.ctx) {}
+
+  qthreads_context &operator=(qthreads_context const &&other) { return *this; }
 };
 
 template <ex::receiver Receiver, ex::sender Work>
@@ -46,24 +38,24 @@ struct on_qthreads_receiver {
   Work work_;
   Receiver receiver_;
   using receiver_concept = ex::receiver_t;
+
   void set_value() noexcept {
-      ex::sender auto work_and_done = 
-      stdexec::just() | ex::then([this] { 
-      aligned_t feb;
-      int r = qthread_fork(this->work_.func, NULL, &feb);
-      assert(!r);
-      qthread_readFF(NULL, &feb);
+    ex::sender auto work_and_done =
+      stdexec::just() | ex::then([this] {
+        aligned_t feb;
+        int r = qthread_fork(this->work_.func, NULL, &feb);
+        assert(!r);
+        qthread_readFF(NULL, &feb);
       });
-      auto op = ex::connect(work_and_done,
-        std::move(receiver_));
-      ex::start(op);
+    auto op = ex::connect(work_and_done, std::move(receiver_));
+    ex::start(op);
   }
 
   void set_error(std::exception_ptr e) noexcept {
-    ex::set_error(std::move(receiver_), e); }
+    ex::set_error(std::move(receiver_), e);
+  }
 
-  void set_stopped() noexcept { 
-    ex::set_stopped(std::move(receiver_)); }
+  void set_stopped() noexcept { ex::set_stopped(std::move(receiver_)); }
 };
 
 template <ex::sender Previous, ex::sender Work>
@@ -72,29 +64,25 @@ struct on_qthreads_sender {
   Previous previous_;
   Work work_;
   using sender_concept = ex::sender_t;
-  using completion_signatures = 
-    ex::completion_signatures<
-      ex::set_value_t(),
-      ex::set_error_t(std::exception_ptr),
-      ex::set_stopped_t()>;
+  using completion_signatures =
+    ex::completion_signatures<ex::set_value_t(),
+                              ex::set_error_t(std::exception_ptr),
+                              ex::set_stopped_t()>;
 
-  ex::env<> get_env() const noexcept { 
-    return {}; }
+  ex::env<> get_env() const noexcept { return {}; }
+
   template <ex::receiver Receiver>
   auto connect(Receiver receiver) noexcept {
-    return ex::connect(previous_, 
-      on_qthreads_receiver{ 
-      ctx_, work_, receiver});
+    return ex::connect(previous_, on_qthreads_receiver{ctx_, work_, receiver});
   }
 };
 
-template <ex::sender Previous, ex::sender Work> auto
- on_qthreads( Previous prev, qthreads_context & ctx,
-    Work work)->on_qthreads_sender<Previous, 
-    Work> {
+template <ex::sender Previous, ex::sender Work>
+auto on_qthreads(Previous prev,
+                 qthreads_context &ctx,
+                 Work work) -> on_qthreads_sender<Previous, Work> {
   return {ctx, prev, work};
 }
 
-
-} //namespaces stdexx
+} // namespace stdexx
 

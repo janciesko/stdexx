@@ -88,10 +88,9 @@ struct fib_s {
   - ! The callback is called on completion of op::start
   */
   template <stdexec::receiver_of<completion_signatures> Receiver>
-  auto connect(Receiver rcv) noexcept -> op<Receiver>  {
+  auto connect(Receiver rcv) noexcept -> op<Receiver> {
     return {static_cast<Receiver &&>(rcvr), self.cutoff, self.n, self.sched};
   }
-
 };
 
 template <class Scheduler>
