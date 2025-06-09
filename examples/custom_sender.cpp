@@ -39,7 +39,46 @@ struct sender {
   }
 };
 
+static inline auto task1 (void *) ->aligned_t {
+  std::cout << "Hello from qthread task 1!" << std::endl;
+  return 0;
+}
+
+static inline auto task2 (void *) ->aligned_t {
+  std::cout << "Hello from qthread task 2!" << std::endl;
+  return 0;
+}
+
+struct another_sender {
+  using sender_concept = stdexec::sender_t;
+  using completion_signatures =
+    stdexec::completion_signatures<stdexec::set_value_t(aligned_t)>;
+  qthread_f func;
+  template <class Receiver>
+  struct op {
+    Receiver rcv;
+    void start() & noexcept {
+      stdexec::set_value(std::move(rcv), 1);
+    }
+  };
+  template <stdexec::receiver Receiver>
+  auto connect(Receiver rcv) noexcept -> op<Receiver>  {
+    return {std::move(rcv)};
+  }
+};
+
 auto main() -> int {
+
+  /* Trivial use API to chain work */
+  stdexx::qthreads_context ctx;
+  stdexec::sender auto my_first_sender = 
+    on_qthreads(stdexec::just(), ctx, another_sender{task1});
+  stdexec::sender auto my_other_sender = 
+    on_qthreads(stdexec::just(), ctx, another_sender{task2});
+  stdexec::sync_wait(stdexec::when_all(my_first_sender, my_other_sender));
+
+  return 1;
+
   /*Sync_wait*/
   auto my_sender = sender{42};
   auto [a] = stdexec::sync_wait(std::move(my_sender)).value();
