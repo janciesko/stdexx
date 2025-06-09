@@ -97,10 +97,9 @@ struct _retry_sender {
     return {};
   }
 
-  template <stdexec::receiver R>
-  friend auto
-  tag_invoke(stdexec::connect_t, _retry_sender &&self, R r) -> _op<S, R> {
-    return {static_cast<S &&>(self.s_), static_cast<R &&>(r)};
+template <stdexec::receiver R>
+  auto connect(R r) noexcept -> _op<S, R>  {
+    return {static_cast<S &&>(s_), static_cast<R &&>(r)};
   }
 
   auto get_env() const noexcept -> stdexec::env_of_t<S> {

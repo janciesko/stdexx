@@ -82,19 +82,16 @@ struct fib_s {
   };
 
   /*
-  - Scheduler invokes sender via the tag invoke
-  - Invoke accepts args: connect_t, self, and recv (recv is provided by the
-  sender adapter)
-  - Returns an op state intance, initialized with rcv.
+  - Connects sender and receiver
+  - Returns op state templated on the Reiver type
   - ! The initialization of op sets the rcv (callback)
   - ! The callback is called on completion of op::start
   */
   template <stdexec::receiver_of<completion_signatures> Receiver>
-  friend auto tag_invoke(stdexec::connect_t,
-                         fib_s self,
-                         Receiver rcvr) -> operation<Receiver> {
+  auto connect(Receiver rcv) noexcept -> op<Receiver>  {
     return {static_cast<Receiver &&>(rcvr), self.cutoff, self.n, self.sched};
   }
+
 };
 
 template <class Scheduler>

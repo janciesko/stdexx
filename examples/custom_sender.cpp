@@ -28,16 +28,13 @@ struct sender {
   };
 
   /*
-  - Scheduler invokes sender via the tag invoke
-  - Invoke accepts args: connect_t, self, and rcv (rcv is provided by the sender
-  adapter)
-  - Returns an op state intance, initialized with rcv.
+  - Connects sender and receiver
+  - Returns op state templated on the Reiver type
   - ! The initialization of op sets the rcv (callback)
   - ! The callback is called on completion of op::start
   */
-  template <class Receiver>
-  friend auto
-  tag_invoke(stdexec::connect_t, sender, Receiver rcv) -> op<Receiver> {
+  template <stdexec::receiver Receiver>
+  auto connect(Receiver rcv) noexcept -> op<Receiver>  {
     return {std::move(rcv)};
   }
 };
@@ -68,7 +65,7 @@ struct sender {
   - Has start
   - Calls set_value on (rcv, value) synchronously
   - This uses compatible completion signature to provide value to rcv
-  - This will mark completion of sender (the  recv is the callback)
+  - This will mark completion of sender (the recv is the callback)
   */
   template <class Receiver>
   struct op {
@@ -81,16 +78,13 @@ struct sender {
   };
 
   /*
-  - Scheduler invokes sender via the tag invoke
-  - Invoke accepts args: connect_t, self, and rcv (rcv is provided by the sender
-  adapter)
-  - Returns an op state intance, initialized with rcv.
+  - Connects sender and receiver
+  - Returns op state templated on the Reiver type
   - ! The initialization of op sets the rcv (callback)
   - ! The callback is called on completion of op::start
   */
-  template <class Receiver>
-  friend auto
-  tag_invoke(stdexx::connect_t, sender, Receiver rcv) -> op<Receiver> {
+  template <stdexx::receiver Receiver>
+  auto connect(Receiver rcv) noexcept -> op<Receiver>  {
     return {std::move(rcv)};
   }
 };
@@ -102,7 +96,7 @@ auto main() -> int {
 
   /*Via connect*/
   auto op = stdexx::connect(my_sender, empty_recv::expect_value_receiver{42});
-  ex::start(op);
+  stdexx::start(op);
 
   return (a == 42) ? 1 : 0;
 }
