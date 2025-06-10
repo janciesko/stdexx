@@ -20,10 +20,11 @@ struct sender {
   template <class Receiver>
   struct op {
     Receiver rcv;
+    int val;
 
     void start() & noexcept {
       std::printf("success!\n");
-      stdexec::set_value(std::move(rcv), 42);
+      stdexec::set_value(std::move(rcv), val);
     }
   };
 
@@ -35,7 +36,7 @@ struct sender {
   */
   template <stdexec::receiver Receiver>
   auto connect(Receiver rcv) noexcept -> op<Receiver> {
-    return {std::move(rcv)};
+    return {std::move(rcv), value_};
   }
 };
 
@@ -70,10 +71,11 @@ struct sender {
   template <class Receiver>
   struct op {
     Receiver rcv;
+    int val;
 
     void start() & noexcept {
       std::printf("success!\n");
-      stdexec::set_value(std::move(rcv), 42);
+      stdexec::set_value(std::move(rcv), val);
     }
   };
 
@@ -85,7 +87,7 @@ struct sender {
   */
   template <stdexx::receiver Receiver>
   auto connect(Receiver rcv) noexcept -> op<Receiver> {
-    return {std::move(rcv)};
+    return {std::move(rcv), value_};
   }
 };
 

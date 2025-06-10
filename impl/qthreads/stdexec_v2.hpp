@@ -40,13 +40,9 @@ struct on_qthreads_receiver {
   using receiver_concept = ex::receiver_t;
 
   void set_value() noexcept {
+    std::cout << "work_and_done" << std::endl;
     ex::sender auto work_and_done =
-      stdexec::just() | ex::then([this] {
-        aligned_t feb;
-        int r = qthread_fork(this->work_.func, NULL, &feb);
-        assert(!r);
-        qthread_readFF(NULL, &feb);
-      });
+      ex::then(work_, [](aligned_t *feb) { qthread_readFF(NULL, feb); });
     auto op = ex::connect(work_and_done, std::move(receiver_));
     ex::start(op);
   }
@@ -73,15 +69,18 @@ struct on_qthreads_sender {
 
   template <ex::receiver Receiver>
   auto connect(Receiver receiver) noexcept {
-    return ex::connect(previous_, on_qthreads_receiver{ctx_, work_, receiver});
+    return ex::connect(previous_,
+                       on_qthreads_receiver{ctx_, std::move(work_), receiver});
   }
 };
 
+// This is motivated by the stdexec::then algorithm but takes a ctx and two
+// senders instead
 template <ex::sender Previous, ex::sender Work>
 auto on_qthreads(Previous prev,
                  qthreads_context &ctx,
                  Work work) -> on_qthreads_sender<Previous, Work> {
-  return {ctx, prev, work};
+  return {ctx, prev, std::move(work)};
 }
 
 } // namespace stdexx
