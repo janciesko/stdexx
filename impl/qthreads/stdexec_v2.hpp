@@ -42,7 +42,7 @@ struct on_qthreads_receiver {
   void set_value() noexcept {
     std::cout << "work_and_done" << std::endl;
     ex::sender auto work_and_done =
-      ex::then(work_, [](aligned_t *feb) { qthread_readFF(NULL, feb); });
+      ex::then(work_, [](aligned_t *feb) { qthread_readFF(NULL, feb);std::cout << "FEB:" << feb << std::endl;});
     auto op = ex::connect(work_and_done, std::move(receiver_));
     ex::start(op);
   }
@@ -70,7 +70,7 @@ struct on_qthreads_sender {
   template <ex::receiver Receiver>
   auto connect(Receiver receiver) noexcept {
     return ex::connect(previous_,
-                       on_qthreads_receiver{ctx_, std::move(work_), receiver});
+                       on_qthreads_receiver{ctx_, work_, receiver});
   }
 };
 
@@ -80,7 +80,7 @@ template <ex::sender Previous, ex::sender Work>
 auto on_qthreads(Previous prev,
                  qthreads_context &ctx,
                  Work work) -> on_qthreads_sender<Previous, Work> {
-  return {ctx, prev, std::move(work)};
+  return {ctx, prev, work};
 }
 
 } // namespace stdexx
