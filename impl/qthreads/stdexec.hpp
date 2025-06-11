@@ -104,7 +104,6 @@ struct qthreads_scheduler {
         stdexec::set_stopped(std::move(receiver));
         return;
       }
-      std::cout << "calling qthread_fork" << std::endl;
       int r = qthread_fork(&task, this, feb);
       assert(!r);
 
@@ -139,7 +138,6 @@ struct qthreads_scheduler {
       // how.
       extended_operation_state *eos =
         reinterpret_cast<extended_operation_state *>(eos_void);
-      std::cout << "calling provided function" << std::endl;
       aligned_t ret = (*eos->func)(*eos->arg);
       stdexec::set_value(std::move(eos->receiver), ret);
       return ret;
@@ -151,14 +149,11 @@ struct qthreads_scheduler {
         stdexec::set_stopped(std::move(receiver));
         return;
       }
-      std::cout << "calling qthread_fork" << std::endl;
       int r = qthread_fork(&task, this, feb);
-      std::cout << "back from qthread_fork" << std::endl;
       assert(!r);
       if (r != QTHREAD_SUCCESS) {
         stdexec::set_error(std::move(this->receiver), r);
       }
-      std::cout << "returning from start" << std::endl;
     }
   };
 
@@ -212,21 +207,18 @@ struct qthreads_scheduler {
 
     template <typename Receiver>
     extended_operation_state<Func, Arg, Receiver> connect(Receiver &&receiver) {
-      std::cout << "calling through ordinary connect" << std::endl;
       return {&func, &arg, &feb, std::forward<Receiver>(receiver)};
     }
 
     template <typename Receiver>
     static extended_operation_state<Func, Arg, Receiver>
     connect(qthreads_func_sender &&s, Receiver &&receiver) {
-      std::cout << "calling through single-shot connect." << std::endl;
       return {&s.func, &s.arg, &s.feb, std::forward<Receiver>(receiver)};
     }
 
     template <typename Receiver>
     static extended_operation_state<Func, Arg, Receiver>
     connect(qthreads_func_sender &s, Receiver &&receiver) {
-      std::cout << "calling through multi-shot connect." << std::endl;
       return {&s.func, &s.arg, &s.feb, std::forward<Receiver>(receiver)};
     }
 
@@ -268,21 +260,14 @@ struct qthreads_scheduler {
                                      stdexec::set_error_t(int)>;
 
     template <typename Receiver>
-    operation_state<Receiver> connect(Receiver &&receiver) {
-      return {&feb, std::forward<Receiver>(receiver)};
-    }
-
-    template <typename Receiver>
     static operation_state<Receiver> connect(qthreads_sender &&s,
                                              Receiver &&receiver) {
-      std::cout << "calling through single-shot connect." << std::endl;
       return {&s.feb, std::forward<Receiver>(receiver)};
     }
 
     template <typename Receiver>
     static operation_state<Receiver> connect(qthreads_sender &s,
                                              Receiver &&receiver) {
-      std::cout << "calling through multi-shot connect." << std::endl;
       return {&s.feb, std::forward<Receiver>(receiver)};
     }
 
@@ -311,8 +296,7 @@ struct apply_sender_for<stdexec::sync_wait_t> {
   auto operator()(S &&sn);
 
   template <>
-  auto operator()(qthreads_scheduler::qthreads_sender &&sn) {
-    std::cout << "starting specialized apply_sender" << std::endl;
+  auto operator()(qthreads_scheduler::qthreads_sender &sn) {
     stdexec::__sync_wait::__state __local_state{};
     std::optional<stdexec::__sync_wait::__sync_wait_result_t<
       qthreads_scheduler::qthreads_sender>>
@@ -320,27 +304,28 @@ struct apply_sender_for<stdexec::sync_wait_t> {
 
     // Launch the sender with a continuation that will fill in the __result
     // optional or set the exception_ptr in __local_state.
-    std::cout << "calling connect" << std::endl;
     [[maybe_unused]]
     auto op = stdexec::connect(
       sn,
       stdexec::__sync_wait::__receiver_t<qthreads_scheduler::qthreads_sender>{
         &__local_state, &result});
-    std::cout << "starting op" << std::endl;
     stdexec::start(op);
 
     // Wait for the variant to be filled in.
 
-    std::cout << "successfully specialized sync_wait!" << std::endl;
     aligned_t r;
     qthread_readFF(&r, &sn.feb);
-    std::cout << "Returned from waiting" << std::endl;
     return result;
+  }
+
+  // Forward the rvalue implementation to the lvalue one.
+  template <>
+  auto operator()(qthreads_scheduler::qthreads_sender &&sn) {
+    return (*this)(sn);
   }
 
   template <typename Func, typename Arg>
   auto operator()(qthreads_scheduler::qthreads_func_sender<Func, Arg> &sn) {
-    std::cout << "starting specialized apply_sender" << std::endl;
     stdexec::__sync_wait::__state __local_state{};
     std::optional<stdexec::__sync_wait::__sync_wait_result_t<
       qthreads_scheduler::qthreads_func_sender<Func, Arg>>>
@@ -348,23 +333,25 @@ struct apply_sender_for<stdexec::sync_wait_t> {
 
     // Launch the sender with a continuation that will fill in the __result
     // optional or set the exception_ptr in __local_state.
-    std::cout << "calling connect" << std::endl;
     [[maybe_unused]]
     auto op =
       stdexec::connect(sn,
                        stdexec::__sync_wait::__receiver_t<
                          qthreads_scheduler::qthreads_func_sender<Func, Arg>>{
                          &__local_state, &result});
-    std::cout << "starting op" << std::endl;
     stdexec::start(op);
 
     // Wait for the variant to be filled in.
 
-    std::cout << "successfully specialized sync_wait!" << std::endl;
     aligned_t r;
     qthread_readFF(&r, &sn.feb);
-    std::cout << "Returned from waiting" << std::endl;
     return result;
+  }
+
+  // Forward the rvalue implementation to the lvalue one.
+  template <typename Func, typename Arg>
+  auto operator()(qthreads_scheduler::qthreads_func_sender<Func, Arg> &&sn) {
+    return (*this)(sn);
   }
 };
 
