@@ -84,13 +84,13 @@ struct sender_wrapper_sync {
   stdexec::env<> get_env() const noexcept { return {}; }
 };
 
-
 struct sender_wrapper_receiver {
   using receiver_concept = stdexec::receiver_t;
-  void set_value(aligned_t * feb) noexcept {
-    qthread_readFF(NULL, feb);
-  }
+
+  void set_value(aligned_t *feb) noexcept { qthread_readFF(NULL, feb); }
+
   void set_error(std::exception_ptr) noexcept {}
+
   void set_stopped() noexcept {}
 };
 
@@ -103,17 +103,16 @@ auto main() -> int {
     then(stdexec::just(), qthreads_context, sender_wrapper{task2});
   auto [val] = stdexec::sync_wait(stdexec::when_all(s1, s2)).value();
   std::cout << std::get<0>(val) << std::endl;
-  
+
   // Using sender_wrapper and sender_wrapper_receiver
   stdexec::sender auto s5 = sender_wrapper{task3};
-  auto op1 =
-    stdexec::connect(s5,sender_wrapper_receiver{});
+  auto op1 = stdexec::connect(s5, sender_wrapper_receiver{});
   stdexec::start(op1);
 
   // Just run sender_wrapper_sync
   // auto s3 = sender_wrapper_sync{task3};
-  // auto op2 = stdexec::connect(s3, empty_recv::expect_value_receiver{(aligned_t)44});
-  // stdexec::start(op2);
+  // auto op2 = stdexec::connect(s3,
+  // empty_recv::expect_value_receiver{(aligned_t)44}); stdexec::start(op2);
 
   return 0;
 }
