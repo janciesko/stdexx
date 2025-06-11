@@ -96,11 +96,11 @@ struct sender_wrapper_receiver {
 
 auto main() -> int {
   /*Explicit use of custom senders*/
-  stdexx::qthreads_context ctx;
+  stdexx::qthreads_context qthreads_context;
   stdexec::sender auto s1 =
-    on_qthreads(stdexec::just(), ctx, sender_wrapper{task1});
+    then(stdexec::just(), qthreads_context, sender_wrapper{task1});
   stdexec::sender auto s2 =
-    on_qthreads(stdexec::just(), ctx, sender_wrapper{task2});
+    then(stdexec::just(), qthreads_context, sender_wrapper{task2});
   auto [val] = stdexec::sync_wait(stdexec::when_all(s1, s2)).value();
   std::cout << std::get<0>(val) << std::endl;
   
