@@ -23,7 +23,7 @@ struct transform_sender_for;
 template <class Tag>
 struct apply_sender_for;
 
-struct qthreads_domain /*: stdexec::default_domain*/ {
+struct qthreads_domain {
   template <stdexec::sender_expr Sender,
             class Tag = stdexec::tag_of_t<Sender>,
             class... Env>
@@ -107,7 +107,6 @@ struct qthreads_scheduler {
       std::cout << "calling qthread_fork" << std::endl;
       int r = qthread_fork(&task, this, feb);
       assert(!r);
-      // qthread_readFF(NULL, &ret);
 
       if (r != QTHREAD_SUCCESS) {
         stdexec::set_error(std::move(this->receiver), r);
@@ -370,35 +369,4 @@ struct apply_sender_for<stdexec::sync_wait_t> {
 };
 
 } // namespace stdexx
-
-/*
-template <>
-auto
-stdexec::__sync_wait::sync_wait_t::apply_sender<stdexx::qthreads_scheduler::qthreads_sender>(
-  stdexx::qthreads_scheduler::qthreads_sender &&s) const
-  -> std::optional<
-    stdexec::__sync_wait::__sync_wait_result_t<stdexx::qthreads_scheduler::qthreads_sender>>
-{
-  __state __local_state{};
-  std::optional<
-    stdexec::__sync_wait::__sync_wait_result_t<stdexx::qthreads_scheduler::qthreads_sender>>
-    result{};
-
-  // Launch the sender with a continuation that will fill in the __result
-  // optional or set the exception_ptr in __local_state.
-  std::cout << "calling connect" << std::endl;
-  [[maybe_unused]]
-  auto op = stdexec::connect(
-    s, __receiver_t<stdexx::qthreads_scheduler::qthreads_sender>{&__local_state,
-&result}); std::cout << "starting op" << std::endl; stdexec::start(op);
-
-  // Wait for the variant to be filled in.
-
-  std::cout << "successfully specialized sync_wait!" << std::endl;
-  aligned_t r;
-  qthread_readFF(&r, &s.feb);
-  std::cout << "Returned from waiting" << std::endl;
-  return result;
-}
-*/
 
