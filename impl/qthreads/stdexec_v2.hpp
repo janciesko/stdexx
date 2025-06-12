@@ -39,13 +39,15 @@ struct on_qthreads_receiver {
   Receiver receiver_;
   using receiver_concept = ex::receiver_t;
 
-  void set_value() noexcept {
+  void set_value(int i) noexcept {
     std::cout << "work_and_done" << std::endl;
-    ex::sender auto work_and_done = ex::then(work_, [](aligned_t *feb) {
+    ex::sender auto work = ex::just(i) | work_;
+    ex::sender auto and_done = ex::then(work, [](aligned_t *feb) {
       qthread_readFF(NULL, feb);
       std::cout << "FEB:" << feb << std::endl;
     });
-    auto op = ex::connect(work_and_done, std::move(receiver_));
+
+    auto op = ex::connect(and_done, std::move(receiver_));
     ex::start(op);
   }
 
@@ -63,7 +65,7 @@ struct on_qthreads_sender {
   Work work_;
   using sender_concept = ex::sender_t;
   using completion_signatures =
-    ex::completion_signatures<ex::set_value_t(),
+    ex::completion_signatures<ex::set_value_t(int t),
                               ex::set_error_t(std::exception_ptr),
                               ex::set_stopped_t()>;
 
