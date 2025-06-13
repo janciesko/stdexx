@@ -31,9 +31,6 @@ template <class Tag>
 struct apply_sender_for;
 
 struct qthreads_domain {
-  template <typename... Arg>
-  auto &&transform_sender(Arg...);
-
   // The example we're following for transform_sender uses
   // stdexec::sender_expr as the concept for Sender here,
   // but that seems to require some internal or undocumented
@@ -44,24 +41,19 @@ struct qthreads_domain {
   template <stdexec::sender_expr Sender, class... Env>
   auto &&transform_sender(Sender &&sndr, Env const &...env) const {
     using Tag = stdexec::tag_of_t<Sender>;
-    // sndr.nothere();
-    // static_assert(0, "inside tranform_sender");
-    // std::abort();
-    // return std::move(sndr);
-    // return static_cast<Sender>(static_cast<Sender &&>(sndr));
-    //  The stream domain example in nvexec uses some internal
-    //  idioms to unpack the info from inside stdexec::then.
-    //  For now we're following that same pattern rather than chase
-    //  down the info manually.
-    //  Is there even an established method in the spec for getting the
-    //  invocable back out of a sender adaptor?
+    // The stream domain example in nvexec uses some internal
+    // idioms to unpack the info from inside stdexec::then.
+    // For now we're following that same pattern rather than chase
+    // down the info manually.
+    // Is there even an established method in the spec for getting the
+    // invocable back out of a sender adaptor?
     return stdexec::__sexpr_apply(static_cast<Sender &&>(sndr),
                                   transform_sender_for<Tag, Env...>{env...});
   }
 
   template <typename... Env>
-  auto &&transform_sender(qthreads_sender &&sndr,
-                          Env const &...env) const noexcept;
+  qthreads_sender &&transform_sender(qthreads_sender &&sndr,
+                                     Env const &...env) const noexcept;
 
   template <class Tag, stdexec::sender Sender, class... Args>
     requires stdexec::__callable<apply_sender_for<Tag>, Sender, Args...>
@@ -325,8 +317,9 @@ struct apply_sender_for<stdexec::sync_wait_t> {
 };
 
 template <typename... Env>
-auto &&qthreads_domain::transform_sender(qthreads_sender &&sndr,
-                                         Env const &...env) const noexcept {
+qthreads_sender &&
+qthreads_domain::transform_sender(qthreads_sender &&sndr,
+                                  Env const &...env) const noexcept {
   return std::move(sndr);
 }
 
