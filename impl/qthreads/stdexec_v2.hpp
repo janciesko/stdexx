@@ -80,9 +80,8 @@ struct on_qthreads_sender {
 // This is motivated by the stdexec::then algorithm but takes a ctx and two
 // senders instead
 template <ex::sender Previous, ex::sender Work>
-auto then(Previous prev,
-          qthreads_context &ctx,
-          Work work) -> on_qthreads_sender<Previous, Work> {
+auto then(Previous prev, qthreads_context &ctx, Work work)
+  -> on_qthreads_sender<Previous, Work> {
   return {ctx, prev, work};
 }
 

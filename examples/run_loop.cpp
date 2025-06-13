@@ -5,7 +5,7 @@ using namespace std::literals;
 
 #if (STDEXX_QTHREADS)
 
-auto main() -> int {}; // todo
+auto main() -> int {} // todo
 
 #elif (STDEXX_REFERENCE)
 

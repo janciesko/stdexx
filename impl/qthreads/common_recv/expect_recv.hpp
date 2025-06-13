@@ -71,8 +71,8 @@ public:
   base_expect_receiver(base_expect_receiver &&other):
     called_(other.called_.exchange(true)), env_(std::move(other.env_)) {}
 
-  auto
-  operator=(base_expect_receiver &&other) -> base_expect_receiver & = delete;
+  auto operator=(base_expect_receiver &&other)
+    -> base_expect_receiver & = delete;
 
   void set_called() { called_.store(true); }
 
