@@ -17,6 +17,13 @@ int init() { return qthread_initialize(); }
 
 void finalize() { qthread_finalize(); }
 
+struct qthreads_domain;
+struct qthreads_scheduler;
+struct qthreads_env;
+struct qthreads_sender;
+template <typename Func, typename Arg>
+struct qthreads_func_sender;
+
 template <class Tag, class... Env>
 struct transform_sender_for;
 
@@ -24,16 +31,37 @@ template <class Tag>
 struct apply_sender_for;
 
 struct qthreads_domain {
-  template <stdexec::sender_expr Sender,
-            class Tag = stdexec::tag_of_t<Sender>,
-            class... Env>
-    requires stdexec::__callable<stdexec::__sexpr_apply_t,
-                                 Sender,
-                                 transform_sender_for<Tag, Env...>>
-  static auto transform_sender(Sender &&sndr, Env const &...env) {
+  template <typename... Arg>
+  auto &&transform_sender(Arg...);
+
+  // The example we're following for transform_sender uses
+  // stdexec::sender_expr as the concept for Sender here,
+  // but that seems to require some internal or undocumented
+  // stuff right now, so trying to get that concept to match
+  // a qthreads_sender causes the compiler to word-vomit
+  // a mountain of unhelpful concept mismatch errors.
+  // For now just skip the concept check here.
+  template <stdexec::sender_expr Sender, class... Env>
+  auto &&transform_sender(Sender &&sndr, Env const &...env) const {
+    using Tag = stdexec::tag_of_t<Sender>;
+    // sndr.nothere();
+    // static_assert(0, "inside tranform_sender");
+    // std::abort();
+    // return std::move(sndr);
+    // return static_cast<Sender>(static_cast<Sender &&>(sndr));
+    //  The stream domain example in nvexec uses some internal
+    //  idioms to unpack the info from inside stdexec::then.
+    //  For now we're following that same pattern rather than chase
+    //  down the info manually.
+    //  Is there even an established method in the spec for getting the
+    //  invocable back out of a sender adaptor?
     return stdexec::__sexpr_apply(static_cast<Sender &&>(sndr),
                                   transform_sender_for<Tag, Env...>{env...});
   }
+
+  template <typename... Env>
+  auto &&transform_sender(qthreads_sender &&sndr,
+                          Env const &...env) const noexcept;
 
   template <class Tag, stdexec::sender Sender, class... Args>
     requires stdexec::__callable<apply_sender_for<Tag>, Sender, Args...>
@@ -46,20 +74,8 @@ struct qthreads_domain {
 struct qthreads_scheduler {
   constexpr qthreads_scheduler() = default;
 
-  qthreads_domain get_domain() const noexcept { return {}; }
-
-  [[nodiscard]] auto query(stdexec::get_domain_t) -> qthreads_domain {
-    return {};
-  }
-
-  // For some reason get_domain can currently only be specialized this way.
-  // TODO: fix and/or report this upstream.
-  // In theory adding get_domain as a method or using the query interface
-  // should work, but neither actually do.
-  friend qthreads_domain tag_invoke(stdexec::get_domain_t,
-                                    qthreads_scheduler const &) {
-    return {};
-  }
+  friend qthreads_domain tag_invoke(stdexec::get_domain_t const,
+                                    qthreads_scheduler const &) noexcept;
 
   bool operator==(qthreads_scheduler const &rhs) const noexcept { return true; }
 
@@ -67,203 +83,194 @@ struct qthreads_scheduler {
     return !(*this == rhs);
   }
 
-  template <typename Receiver>
-  struct operation_state {
-    aligned_t feb;
-    [[no_unique_address]] std::decay_t<Receiver> receiver;
-
-    template <typename Receiver_>
-    operation_state(Receiver_ &&receiver):
-      feb(0u), receiver(std::forward<Receiver_>(receiver)) {}
-
-    operation_state(operation_state &&) = delete;
-    operation_state(operation_state const &) = delete;
-    operation_state &operator=(operation_state &&) = delete;
-    operation_state &operator=(operation_state const &) = delete;
-
-    // This one's not a part of the stdexec standard.
-    // This is just the function that gets passed to qthread_fork.
-    static aligned_t task(void *arg) noexcept {
-      auto *os = static_cast<operation_state *>(arg);
-      // TODO: Call into a user-provided function pointer here instead.
-      // TODO: How do we pipe the template parameters around to accomodate
-      // different signatures (and return types) here?
-      std::cout << "Hello from qthreads in initial scheduling task! id = "
-                << qthread_id() << std::endl;
-      // This call to set_value does the other work from a bunch of the
-      // algorithms in stdexec. The simpler ones just recursively do their work
-      // here.
-      aligned_t ret = 0u;
-      stdexec::set_value(std::move(os->receiver), ret);
-      return ret;
-    }
-
-    inline void start() noexcept {
-      auto st = stdexec::get_stop_token(stdexec::get_env(receiver));
-      if (st.stop_requested()) {
-        stdexec::set_stopped(std::move(receiver));
-        return;
-      }
-      int r = qthread_fork(&task, this, &feb);
-      assert(!r);
-
-      if (r != QTHREAD_SUCCESS) {
-        stdexec::set_error(std::move(this->receiver), r);
-      }
-    }
-  };
-
-  template <typename Func, typename Arg, typename Receiver>
-  struct extended_operation_state {
-    Func func;
-    Arg arg;
-    aligned_t feb;
-    [[no_unique_address]] std::decay_t<Receiver> receiver;
-
-    template <typename Receiver_>
-    extended_operation_state(Func &&f, Arg &&a, Receiver_ &&receiver):
-      func(f), arg(a), feb(0u), receiver(std::forward<Receiver_>(receiver)) {}
-
-    extended_operation_state(extended_operation_state &&) = delete;
-    extended_operation_state(extended_operation_state const &) = delete;
-    extended_operation_state &operator=(extended_operation_state &&) = delete;
-    extended_operation_state &
-    operator=(extended_operation_state const &) = delete;
-
-    static aligned_t task(void *eos_void) noexcept {
-      // TODO: we can probably forward C++ exceptions out of here. Figure out
-      // how.
-      extended_operation_state *eos =
-        reinterpret_cast<extended_operation_state *>(eos_void);
-      aligned_t ret = (eos->func)(eos->arg);
-      stdexec::set_value(std::move(eos->receiver), ret);
-      return ret;
-    }
-
-    inline void start() noexcept {
-      auto st = stdexec::get_stop_token(stdexec::get_env(receiver));
-      if (st.stop_requested()) {
-        stdexec::set_stopped(std::move(receiver));
-        return;
-      }
-      int r = qthread_fork(&task, this, &feb);
-      assert(!r);
-      if (r != QTHREAD_SUCCESS) {
-        stdexec::set_error(std::move(this->receiver), r);
-      }
-    }
-  };
-
-  struct env {
-    qthreads_scheduler get_completion_scheduler() const noexcept { return {}; }
-
-    qthreads_domain get_domain() const noexcept { return {}; }
-
-    [[nodiscard]] auto query(stdexec::get_domain_t) -> qthreads_domain {
-      return {};
-    }
-
-    friend qthreads_domain tag_invoke(stdexec::get_domain_t, env const &) {
-      return {};
-    }
-  };
-
-  template <typename Func, typename Arg> /*requires(Func f, Arg a) {
-    {f(a)};
-    std::is_same_v<decltype(f(a)), aligned_t>;
-  }*/
-  struct qthreads_func_sender {
-    using is_sender = void;
-
-    Func func;
-    Arg arg;
-
-    qthreads_func_sender(Func f, Arg a) noexcept: func(f), arg(a) {}
-
-    // qthreads_func_sender(qthreads_func_sender &&) = delete;
-    // qthreads_func_sender(qthreads_func_sender const &) = delete;
-    // qthreads_func_sender &operator=(qthreads_func_sender &&) = delete;
-    // qthreads_func_sender &operator=(qthreads_func_sender const &) = delete;
-
-    // The types of completion this sender supports.
-    // Even though qthreads doesn't support cancellation, the
-    // corresponding sender and operation state can still
-    // cancel forking a qthread if cancellation has been
-    // requested by the time the operation state's start routine
-    // gets called.
-    // The default sync_wait returns an optional, not a variant, so
-    // set_value must have a single return type and only one entry here.
-    // In this case we use the return value to expose the return value
-    // from the underlying qthread.
-    using completion_signatures =
-      stdexec::completion_signatures<stdexec::set_value_t(aligned_t),
-                                     stdexec::set_stopped_t(),
-                                     stdexec::set_error_t(int)>;
-
-    template <typename Receiver>
-    static extended_operation_state<Func, Arg, Receiver>
-    connect(qthreads_func_sender &&s, Receiver &&receiver) {
-      return {
-        std::move(s.func), std::move(s.arg), std::forward<Receiver>(receiver)};
-    }
-
-    env get_env() const noexcept { return {}; }
-
-    qthreads_domain get_domain() const noexcept { return {}; }
-
-    [[nodiscard]] auto query(stdexec::get_domain_t) -> qthreads_domain {
-      return {};
-    }
-
-    friend qthreads_domain tag_invoke(stdexec::get_domain_t,
-                                      qthreads_func_sender const &) {
-      return {};
-    }
-  };
-
-  // sender type returned by stdexec::schedule in order to
-  // start a chain of tasks on this qthreads_scheduler.
-  struct qthreads_sender {
-    using is_sender = void;
-
-    // The types of completion this sender supports.
-    // Even though qthreads doesn't support cancellation, the
-    // corresponding sender and operation state can still
-    // cancel forking a qthread if cancellation has been
-    // requested by the time the operation state's start routine
-    // gets called.
-    // The default sync_wait returns an optional, not a variant, so
-    // set_value must have a single return type and only one entry here.
-    // In this case we use the return value to expose the return value
-    // from the underlying qthread.
-    using completion_signatures =
-      stdexec::completion_signatures<stdexec::set_value_t(aligned_t),
-                                     stdexec::set_stopped_t(),
-                                     stdexec::set_error_t(int)>;
-
-    template <typename Receiver>
-    static operation_state<Receiver> connect(qthreads_sender &&s,
-                                             Receiver &&receiver) {
-      return {std::forward<Receiver>(receiver)};
-    }
-
-    env get_env() const noexcept { return {}; }
-
-    qthreads_domain get_domain() const noexcept { return {}; }
-
-    [[nodiscard]] auto query(stdexec::get_domain_t) -> qthreads_domain {
-      return {};
-    }
-
-    friend qthreads_domain tag_invoke(stdexec::get_domain_t,
-                                      qthreads_sender const &) {
-      return {};
-    }
-  };
-
   // Called by stdexec::schedule to get a qthreads_sender that can
   // start a chain of tasks on this scheduler.
-  qthreads_sender schedule() const noexcept { return {}; }
+  qthreads_sender schedule() const noexcept;
+};
+
+template <typename Receiver>
+struct operation_state {
+  aligned_t feb;
+  [[no_unique_address]] std::decay_t<Receiver> receiver;
+
+  template <typename Receiver_>
+  operation_state(Receiver_ &&receiver):
+    feb(0u), receiver(std::forward<Receiver_>(receiver)) {}
+
+  operation_state(operation_state &&) = delete;
+  operation_state(operation_state const &) = delete;
+  operation_state &operator=(operation_state &&) = delete;
+  operation_state &operator=(operation_state const &) = delete;
+
+  // This one's not a part of the stdexec standard.
+  // This is just the function that gets passed to qthread_fork.
+  static aligned_t task(void *arg) noexcept {
+    auto *os = static_cast<operation_state *>(arg);
+    // TODO: Call into a user-provided function pointer here instead.
+    // TODO: How do we pipe the template parameters around to accomodate
+    // different signatures (and return types) here?
+    std::cout << "Hello from qthreads in initial scheduling task! id = "
+              << qthread_id() << std::endl;
+    // This call to set_value does the other work from a bunch of the
+    // algorithms in stdexec. The simpler ones just recursively do their work
+    // here.
+    aligned_t ret = 0u;
+    stdexec::set_value(std::move(os->receiver), ret);
+    return ret;
+  }
+
+  inline void start() noexcept {
+    auto st = stdexec::get_stop_token(stdexec::get_env(receiver));
+    if (st.stop_requested()) {
+      stdexec::set_stopped(std::move(receiver));
+      return;
+    }
+    int r = qthread_fork(&task, this, &feb);
+    assert(!r);
+
+    if (r != QTHREAD_SUCCESS) {
+      stdexec::set_error(std::move(this->receiver), r);
+    }
+  }
+};
+
+template <typename Func, typename Arg, typename Receiver>
+struct extended_operation_state {
+  Func func;
+  Arg arg;
+  aligned_t feb;
+  [[no_unique_address]] std::decay_t<Receiver> receiver;
+
+  template <typename Receiver_>
+  extended_operation_state(Func &&f, Arg &&a, Receiver_ &&receiver):
+    func(f), arg(a), feb(0u), receiver(std::forward<Receiver_>(receiver)) {}
+
+  extended_operation_state(extended_operation_state &&) = delete;
+  extended_operation_state(extended_operation_state const &) = delete;
+  extended_operation_state &operator=(extended_operation_state &&) = delete;
+  extended_operation_state &
+  operator=(extended_operation_state const &) = delete;
+
+  static aligned_t task(void *eos_void) noexcept {
+    // TODO: we can probably forward C++ exceptions out of here. Figure out
+    // how.
+    extended_operation_state *eos =
+      reinterpret_cast<extended_operation_state *>(eos_void);
+    aligned_t ret = (eos->func)(eos->arg);
+    stdexec::set_value(std::move(eos->receiver), ret);
+    return ret;
+  }
+
+  inline void start() noexcept {
+    auto st = stdexec::get_stop_token(stdexec::get_env(receiver));
+    if (st.stop_requested()) {
+      stdexec::set_stopped(std::move(receiver));
+      return;
+    }
+    int r = qthread_fork(&task, this, &feb);
+    assert(!r);
+    if (r != QTHREAD_SUCCESS) {
+      stdexec::set_error(std::move(this->receiver), r);
+    }
+  }
+};
+
+struct qthreads_env {
+  qthreads_scheduler get_completion_scheduler() const noexcept { return {}; }
+
+  friend qthreads_domain tag_invoke(stdexec::get_domain_t const,
+                                    qthreads_env const &) noexcept;
+};
+
+// sender type returned by stdexec::schedule in order to
+// start a chain of tasks on this qthreads_scheduler.
+struct qthreads_sender {
+  using is_sender = void;
+
+  // The types of completion this sender supports.
+  // Even though qthreads doesn't support cancellation, the
+  // corresponding sender and operation state can still
+  // cancel forking a qthread if cancellation has been
+  // requested by the time the operation state's start routine
+  // gets called.
+  // The default sync_wait returns an optional, not a variant, so
+  // set_value must have a single return type and only one entry here.
+  // In this case we use the return value to expose the return value
+  // from the underlying qthread.
+  using completion_signatures =
+    stdexec::completion_signatures<stdexec::set_value_t(aligned_t),
+                                   stdexec::set_stopped_t(),
+                                   stdexec::set_error_t(int)>;
+
+  template <typename Receiver>
+  static operation_state<Receiver> connect(qthreads_sender &&s,
+                                           Receiver &&receiver) {
+    return {std::forward<Receiver>(receiver)};
+  }
+
+  qthreads_env get_env() const noexcept { return {}; }
+
+  friend qthreads_domain tag_invoke(stdexec::get_domain_t const,
+                                    qthreads_sender const &) noexcept;
+};
+
+template <typename Func, typename Arg>
+struct qthreads_func_sender {
+  using is_sender = void;
+
+  Func func;
+  Arg arg;
+
+  qthreads_func_sender(Func f, Arg a) noexcept: func(f), arg(a) {}
+
+  // The types of completion this sender supports.
+  // Even though qthreads doesn't support cancellation, the
+  // corresponding sender and operation state can still
+  // cancel forking a qthread if cancellation has been
+  // requested by the time the operation state's start routine
+  // gets called.
+  // The default sync_wait returns an optional, not a variant, so
+  // set_value must have a single return type and only one entry here.
+  // In this case we use the return value to expose the return value
+  // from the underlying qthread.
+  using completion_signatures =
+    stdexec::completion_signatures<stdexec::set_value_t(aligned_t),
+                                   stdexec::set_stopped_t(),
+                                   stdexec::set_error_t(int)>;
+
+  template <typename Receiver>
+  static extended_operation_state<Func, Arg, Receiver>
+  connect(qthreads_func_sender &&s, Receiver &&receiver) {
+    return {
+      std::move(s.func), std::move(s.arg), std::forward<Receiver>(receiver)};
+  }
+
+  qthreads_env get_env() const noexcept { return {}; }
+
+  friend qthreads_domain tag_invoke(stdexec::get_domain_t const,
+                                    qthreads_func_sender const &) noexcept;
+};
+
+qthreads_sender qthreads_scheduler::schedule() const noexcept { return {}; }
+
+template <>
+struct transform_sender_for<stdexec::then_t> {
+  template <class Fn, class /*qthreads sender concept needed here?*/ Sender>
+  auto &&operator()(stdexec::__ignore, Fn fun, Sender &&sndr) const {
+    // fun is already the invocable we want to wrap.
+    // It's already been extracted from inside the default "then".
+    // The wrest of this nonsense just has to do with constructing a
+    // new customized "then" sender that wraps the old one.
+    // Note: stdexec::__decay_t is supposedly equivalent to std::decay_t
+    // but more efficient. Try swapping in the standard one later.
+    static_assert(
+      0,
+      "inside transform_sender_for, correct override but not implemented yet.");
+    // using sender_t =
+    // stdexec::__t<then_sender_t<stdexec::__id<stdexec::__decay_t<Sender>>,
+    // Fn>>; return sender_t{{}, static_cast<Sender&&>(sndr),
+    // static_cast<Fn&&>(fun)};
+  }
 };
 
 template <>
@@ -272,10 +279,32 @@ struct apply_sender_for<stdexec::sync_wait_t> {
   auto operator()(S &&sn);
 
   template <>
-  auto operator()(qthreads_scheduler::qthreads_sender &&sn) {
+  auto operator()(qthreads_sender &&sn) {
+    stdexec::__sync_wait::__state __local_state{};
+    std::optional<stdexec::__sync_wait::__sync_wait_result_t<qthreads_sender>>
+      result{};
+
+    // Launch the sender with a continuation that will fill in the __result
+    // optional or set the exception_ptr in __local_state.
+    [[maybe_unused]]
+    auto op =
+      stdexec::connect(std::move(sn),
+                       stdexec::__sync_wait::__receiver_t<qthreads_sender>{
+                         &__local_state, &result});
+    stdexec::start(op);
+
+    std::cout << "back from start" << std::endl;
+    aligned_t r;
+    std::cout << "calling readFF" << std::endl;
+    qthread_readFF(&r, &op.feb);
+    return result;
+  }
+
+  template <typename Func, typename Arg>
+  auto operator()(qthreads_func_sender<Func, Arg> &&sn) {
     stdexec::__sync_wait::__state __local_state{};
     std::optional<stdexec::__sync_wait::__sync_wait_result_t<
-      qthreads_scheduler::qthreads_sender>>
+      qthreads_func_sender<Func, Arg>>>
       result{};
 
     // Launch the sender with a continuation that will fill in the __result
@@ -283,7 +312,7 @@ struct apply_sender_for<stdexec::sync_wait_t> {
     [[maybe_unused]]
     auto op = stdexec::connect(
       std::move(sn),
-      stdexec::__sync_wait::__receiver_t<qthreads_scheduler::qthreads_sender>{
+      stdexec::__sync_wait::__receiver_t<qthreads_func_sender<Func, Arg>>{
         &__local_state, &result});
     stdexec::start(op);
 
@@ -293,31 +322,48 @@ struct apply_sender_for<stdexec::sync_wait_t> {
     qthread_readFF(&r, &op.feb);
     return result;
   }
-
-  template <typename Func, typename Arg>
-  auto operator()(qthreads_scheduler::qthreads_func_sender<Func, Arg> &&sn) {
-    stdexec::__sync_wait::__state __local_state{};
-    std::optional<stdexec::__sync_wait::__sync_wait_result_t<
-      qthreads_scheduler::qthreads_func_sender<Func, Arg>>>
-      result{};
-
-    // Launch the sender with a continuation that will fill in the __result
-    // optional or set the exception_ptr in __local_state.
-    [[maybe_unused]]
-    auto op =
-      stdexec::connect(std::move(sn),
-                       stdexec::__sync_wait::__receiver_t<
-                         qthreads_scheduler::qthreads_func_sender<Func, Arg>>{
-                         &__local_state, &result});
-    stdexec::start(op);
-
-    // Wait for the variant to be filled in.
-
-    aligned_t r;
-    qthread_readFF(&r, &op.feb);
-    return result;
-  }
 };
+
+template <typename... Env>
+auto &&qthreads_domain::transform_sender(qthreads_sender &&sndr,
+                                         Env const &...env) const noexcept {
+  return std::move(sndr);
+}
+
+// For some reason get_domain can currently only be specialized this way.
+// TODO: fix and/or report this upstream.
+// In theory adding get_domain as a method or using the query interface
+// should work, but neither actually do.
+qthreads_domain tag_invoke(stdexec::get_domain_t const,
+                           qthreads_scheduler const &) noexcept {
+  return {};
+}
+
+qthreads_domain tag_invoke(stdexec::get_domain_t const,
+                           qthreads_env const &) noexcept {
+  return {};
+}
+
+template <typename Func, typename Arg>
+qthreads_domain tag_invoke(stdexec::get_domain_t const,
+                           qthreads_func_sender<Func, Arg> const &) noexcept {
+  return {};
+}
+
+qthreads_domain tag_invoke(stdexec::get_domain_t const,
+                           qthreads_sender const &) noexcept {
+  return {};
+}
+
+static_assert(std::is_same_v<
+              qthreads_domain,
+              decltype(stdexec::get_domain(std::declval<qthreads_sender>()))>);
+static_assert(
+  std::is_same_v<qthreads_domain,
+                 decltype(stdexec::get_domain(std::declval<qthreads_env>()))>);
+static_assert(std::is_same_v<qthreads_domain,
+                             decltype(stdexec::get_domain(
+                               std::declval<qthreads_scheduler>()))>);
 
 } // namespace stdexx
 

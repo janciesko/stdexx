@@ -30,15 +30,12 @@ auto main() -> int {
   std::cout << "values from default sender from qthreads scheduler: "
             << std::get<0>(val1) << ", " << std::get<0>(val2) << std::endl;
 
-  auto val3 =
-    stdexec::sync_wait(
-      stdexx::qthreads_scheduler::qthreads_func_sender<decltype(&test_func),
-                                                       aligned_t>(&test_func,
-                                                                  4ull))
-      .value();
-  stdexx::qthreads_scheduler::qthreads_func_sender<decltype(&test_func),
-                                                   aligned_t>
-    snd2(&test_func, 4ull);
+  auto val3 = stdexec::sync_wait(
+                stdexx::qthreads_func_sender<decltype(&test_func), aligned_t>(
+                  &test_func, 4ull))
+                .value();
+  stdexx::qthreads_func_sender<decltype(&test_func), aligned_t> snd2(&test_func,
+                                                                     4ull);
   auto val4 = stdexec::sync_wait(std::move(snd2)).value();
   std::cout << "values from qthreads func sender: " << std::get<0>(val3) << ", "
             << std::get<0>(val4) << std::endl;
