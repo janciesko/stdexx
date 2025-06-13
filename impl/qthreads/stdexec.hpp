@@ -69,12 +69,12 @@ struct qthreads_scheduler {
 
   template <typename Receiver>
   struct operation_state {
-    aligned_t *feb;
+    aligned_t feb;
     [[no_unique_address]] std::decay_t<Receiver> receiver;
 
     template <typename Receiver_>
-    operation_state(aligned_t *f, Receiver_ &&receiver):
-      feb(f), receiver(std::forward<Receiver_>(receiver)) {}
+    operation_state(Receiver_ &&receiver):
+      feb(0u), receiver(std::forward<Receiver_>(receiver)) {}
 
     operation_state(operation_state &&) = delete;
     operation_state(operation_state const &) = delete;
@@ -104,7 +104,7 @@ struct qthreads_scheduler {
         stdexec::set_stopped(std::move(receiver));
         return;
       }
-      int r = qthread_fork(&task, this, feb);
+      int r = qthread_fork(&task, this, &feb);
       assert(!r);
 
       if (r != QTHREAD_SUCCESS) {
@@ -115,17 +115,14 @@ struct qthreads_scheduler {
 
   template <typename Func, typename Arg, typename Receiver>
   struct extended_operation_state {
-    Func *func;
-    Arg *arg;
-    aligned_t *feb;
+    Func func;
+    Arg arg;
+    aligned_t feb;
     [[no_unique_address]] std::decay_t<Receiver> receiver;
 
     template <typename Receiver_>
-    extended_operation_state(Func *f,
-                             Arg *a,
-                             aligned_t *fb,
-                             Receiver_ &&receiver):
-      func(f), arg(a), feb(fb), receiver(std::forward<Receiver_>(receiver)) {}
+    extended_operation_state(Func &&f, Arg &&a, Receiver_ &&receiver):
+      func(f), arg(a), feb(0u), receiver(std::forward<Receiver_>(receiver)) {}
 
     extended_operation_state(extended_operation_state &&) = delete;
     extended_operation_state(extended_operation_state const &) = delete;
@@ -138,7 +135,7 @@ struct qthreads_scheduler {
       // how.
       extended_operation_state *eos =
         reinterpret_cast<extended_operation_state *>(eos_void);
-      aligned_t ret = (*eos->func)(*eos->arg);
+      aligned_t ret = (eos->func)(eos->arg);
       stdexec::set_value(std::move(eos->receiver), ret);
       return ret;
     }
@@ -149,7 +146,7 @@ struct qthreads_scheduler {
         stdexec::set_stopped(std::move(receiver));
         return;
       }
-      int r = qthread_fork(&task, this, feb);
+      int r = qthread_fork(&task, this, &feb);
       assert(!r);
       if (r != QTHREAD_SUCCESS) {
         stdexec::set_error(std::move(this->receiver), r);
@@ -180,10 +177,8 @@ struct qthreads_scheduler {
 
     Func func;
     Arg arg;
-    // a feb to allow waiting on this sender.
-    aligned_t feb;
 
-    qthreads_func_sender(Func f, Arg a) noexcept: func(f), arg(a), feb(0u) {}
+    qthreads_func_sender(Func f, Arg a) noexcept: func(f), arg(a) {}
 
     // qthreads_func_sender(qthreads_func_sender &&) = delete;
     // qthreads_func_sender(qthreads_func_sender const &) = delete;
@@ -206,20 +201,10 @@ struct qthreads_scheduler {
                                      stdexec::set_error_t(int)>;
 
     template <typename Receiver>
-    extended_operation_state<Func, Arg, Receiver> connect(Receiver &&receiver) {
-      return {&func, &arg, &feb, std::forward<Receiver>(receiver)};
-    }
-
-    template <typename Receiver>
     static extended_operation_state<Func, Arg, Receiver>
     connect(qthreads_func_sender &&s, Receiver &&receiver) {
-      return {&s.func, &s.arg, &s.feb, std::forward<Receiver>(receiver)};
-    }
-
-    template <typename Receiver>
-    static extended_operation_state<Func, Arg, Receiver>
-    connect(qthreads_func_sender &s, Receiver &&receiver) {
-      return {&s.func, &s.arg, &s.feb, std::forward<Receiver>(receiver)};
+      return {
+        std::move(s.func), std::move(s.arg), std::forward<Receiver>(receiver)};
     }
 
     env get_env() const noexcept { return {}; }
@@ -241,9 +226,6 @@ struct qthreads_scheduler {
   struct qthreads_sender {
     using is_sender = void;
 
-    // a feb to allow waiting on this sender.
-    aligned_t feb;
-
     // The types of completion this sender supports.
     // Even though qthreads doesn't support cancellation, the
     // corresponding sender and operation state can still
@@ -262,13 +244,7 @@ struct qthreads_scheduler {
     template <typename Receiver>
     static operation_state<Receiver> connect(qthreads_sender &&s,
                                              Receiver &&receiver) {
-      return {&s.feb, std::forward<Receiver>(receiver)};
-    }
-
-    template <typename Receiver>
-    static operation_state<Receiver> connect(qthreads_sender &s,
-                                             Receiver &&receiver) {
-      return {&s.feb, std::forward<Receiver>(receiver)};
+      return {std::forward<Receiver>(receiver)};
     }
 
     env get_env() const noexcept { return {}; }
@@ -296,7 +272,7 @@ struct apply_sender_for<stdexec::sync_wait_t> {
   auto operator()(S &&sn);
 
   template <>
-  auto operator()(qthreads_scheduler::qthreads_sender &sn) {
+  auto operator()(qthreads_scheduler::qthreads_sender &&sn) {
     stdexec::__sync_wait::__state __local_state{};
     std::optional<stdexec::__sync_wait::__sync_wait_result_t<
       qthreads_scheduler::qthreads_sender>>
@@ -306,7 +282,7 @@ struct apply_sender_for<stdexec::sync_wait_t> {
     // optional or set the exception_ptr in __local_state.
     [[maybe_unused]]
     auto op = stdexec::connect(
-      sn,
+      std::move(sn),
       stdexec::__sync_wait::__receiver_t<qthreads_scheduler::qthreads_sender>{
         &__local_state, &result});
     stdexec::start(op);
@@ -314,18 +290,12 @@ struct apply_sender_for<stdexec::sync_wait_t> {
     // Wait for the variant to be filled in.
 
     aligned_t r;
-    qthread_readFF(&r, &sn.feb);
+    qthread_readFF(&r, &op.feb);
     return result;
   }
 
-  // Forward the rvalue implementation to the lvalue one.
-  template <>
-  auto operator()(qthreads_scheduler::qthreads_sender &&sn) {
-    return (*this)(sn);
-  }
-
   template <typename Func, typename Arg>
-  auto operator()(qthreads_scheduler::qthreads_func_sender<Func, Arg> &sn) {
+  auto operator()(qthreads_scheduler::qthreads_func_sender<Func, Arg> &&sn) {
     stdexec::__sync_wait::__state __local_state{};
     std::optional<stdexec::__sync_wait::__sync_wait_result_t<
       qthreads_scheduler::qthreads_func_sender<Func, Arg>>>
@@ -335,7 +305,7 @@ struct apply_sender_for<stdexec::sync_wait_t> {
     // optional or set the exception_ptr in __local_state.
     [[maybe_unused]]
     auto op =
-      stdexec::connect(sn,
+      stdexec::connect(std::move(sn),
                        stdexec::__sync_wait::__receiver_t<
                          qthreads_scheduler::qthreads_func_sender<Func, Arg>>{
                          &__local_state, &result});
@@ -344,14 +314,8 @@ struct apply_sender_for<stdexec::sync_wait_t> {
     // Wait for the variant to be filled in.
 
     aligned_t r;
-    qthread_readFF(&r, &sn.feb);
+    qthread_readFF(&r, &op.feb);
     return result;
-  }
-
-  // Forward the rvalue implementation to the lvalue one.
-  template <typename Func, typename Arg>
-  auto operator()(qthreads_scheduler::qthreads_func_sender<Func, Arg> &&sn) {
-    return (*this)(sn);
   }
 };
 
