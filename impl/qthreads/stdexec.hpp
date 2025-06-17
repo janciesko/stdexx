@@ -191,8 +191,8 @@ struct qthreads_sender {
   // from the underlying qthread.
   using completion_signatures =
     stdexec::completion_signatures<stdexec::set_value_t(aligned_t),
-                                   stdexec::set_stopped_t() //,
-                                   /*stdexec::set_error_t(int)*/>;
+                                   stdexec::set_stopped_t(),
+                                   stdexec::set_error_t(int)>;
 
   template <typename Receiver>
   static operation_state<Receiver> connect(qthreads_sender &&s,
@@ -227,8 +227,8 @@ struct qthreads_func_sender {
   // from the underlying qthread.
   using completion_signatures =
     stdexec::completion_signatures<stdexec::set_value_t(aligned_t),
-                                   stdexec::set_stopped_t() //,
-                                   /*stdexec::set_error_t(int)*/>;
+                                   stdexec::set_stopped_t(),
+                                   stdexec::set_error_t(int)>;
 
   template <typename Receiver>
   static extended_operation_state<Func, Arg, Receiver>
@@ -284,31 +284,26 @@ struct qthreads_then_sender {
   S s;
   F f;
 
-  /*// Compute the completion signatures
+  // Compute the completion signatures
   template <class... Args>
-  using set_value_t =
-    stdexec::completion_signatures<stdexec::set_value_t(std::invoke_result_t<F,
-  Args...>)>;
+  using set_value_t = stdexec::completion_signatures<stdexec::set_value_t(
+    std::invoke_result_t<F, Args...>)>;
 
   template <class Env>
   using completions_t = stdexec::transform_completion_signatures_of<
     S,
     Env,
     stdexec::completion_signatures<stdexec::set_error_t(std::exception_ptr)>,
-    set_value_t
-  >;
+    set_value_t>;
 
   template <class Env>
-  auto get_completion_signatures(Env&&) && -> completions_t<Env> {
+  auto get_completion_signatures(Env &&) && -> completions_t<Env> {
     return {};
-  }*/
-  using completion_signatures =
-    stdexec::completion_signatures<stdexec::set_value_t(int),
-                                   stdexec::set_error_t(std::exception_ptr)>;
+  }
 
   // Connect:
   template <stdexec::receiver R>
-  // requires stdexec::sender_to<S, qthreads_then_receiver<R, F>>
+    requires stdexec::sender_to<S, qthreads_then_receiver<R, F>>
   auto connect(R r) && {
     // No additional data needed in the operation state, so just
     // connect the wrapped sender to the qthreads_then_receiver which

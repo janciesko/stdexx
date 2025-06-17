@@ -28,23 +28,24 @@ auto main() -> int {
   std::cout << "values from default sender from qthreads scheduler: "
             << std::get<0>(val1) << ", " << std::get<0>(val2) << std::endl;
 
-  stdexec::sender auto then = stdexec::schedule(stdexx::qthreads_scheduler{}) |
-                              stdexec::then([](aligned_t val) {
-                                std::cout << "hello from then: " << val
-                                          << std::endl;
-                                return 1;
-                              });
-  stdexec::sync_wait(std::move(then));
+  stdexec::sender auto then =
+    stdexec::schedule(stdexx::qthreads_scheduler{}) |
+    stdexec::then([](aligned_t val) {
+      std::cout << "hello from then, received: " << val << std::endl;
+      return (aligned_t)1;
+    });
+  auto val3 = stdexec::sync_wait(std::move(then)).value();
+  std::cout << "value returned from then: " << std::get<0>(val3) << std::endl;
 
-  auto val3 = stdexec::sync_wait(
+  auto val4 = stdexec::sync_wait(
                 stdexx::qthreads_func_sender<decltype(&test_func), aligned_t>(
                   &test_func, 4ull))
                 .value();
   stdexx::qthreads_func_sender<decltype(&test_func), aligned_t> snd2(&test_func,
                                                                      4ull);
-  auto val4 = stdexec::sync_wait(std::move(snd2)).value();
-  std::cout << "values from qthreads func sender: " << std::get<0>(val3) << ", "
-            << std::get<0>(val4) << std::endl;
+  auto val5 = stdexec::sync_wait(std::move(snd2)).value();
+  std::cout << "values from qthreads func sender: " << std::get<0>(val4) << ", "
+            << std::get<0>(val5) << std::endl;
 
   stdexx::finalize();
   return 0;
