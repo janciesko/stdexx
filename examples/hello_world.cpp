@@ -21,8 +21,6 @@ auto main() -> int {
   auto val = stdexec::sync_wait(hi_again).value();
   std::cout << std::get<0>(val) << std::endl;
   */
-  // TODO: multi-shot sender API should mean that the hello shows up twice.
-  // currently it's showing three times, so we need to fix that.
   auto val1 =
     stdexec::sync_wait(stdexec::schedule(stdexx::qthreads_scheduler{})).value();
   stdexec::sender auto snd1 = stdexec::schedule(stdexx::qthreads_scheduler{});
