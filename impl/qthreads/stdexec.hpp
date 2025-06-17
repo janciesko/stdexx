@@ -39,7 +39,7 @@ struct qthreads_domain {
   // a mountain of unhelpful concept mismatch errors.
   // For now just skip the concept check here.
   template <stdexec::sender_expr Sender, class... Env>
-  auto &&transform_sender(Sender &&sndr, Env const &...env) const {
+  auto transform_sender(Sender &&sndr, Env const &...env) const {
     using Tag = stdexec::tag_of_t<Sender>;
     // The stream domain example in nvexec uses some internal
     // idioms to unpack the info from inside stdexec::then.
@@ -120,9 +120,9 @@ struct operation_state {
     int r = qthread_fork(&task, this, &feb);
     assert(!r);
 
-    if (r != QTHREAD_SUCCESS) {
-      stdexec::set_error(std::move(this->receiver), r);
-    }
+    // if (r != QTHREAD_SUCCESS) {
+    //   stdexec::set_error(std::move(this->receiver), r);
+    // }
   }
 };
 
@@ -161,9 +161,9 @@ struct extended_operation_state {
     }
     int r = qthread_fork(&task, this, &feb);
     assert(!r);
-    if (r != QTHREAD_SUCCESS) {
+    /*if (r != QTHREAD_SUCCESS) {
       stdexec::set_error(std::move(this->receiver), r);
-    }
+    }*/
   }
 };
 
@@ -191,13 +191,13 @@ struct qthreads_sender {
   // from the underlying qthread.
   using completion_signatures =
     stdexec::completion_signatures<stdexec::set_value_t(aligned_t),
-                                   stdexec::set_stopped_t(),
-                                   stdexec::set_error_t(int)>;
+                                   stdexec::set_stopped_t() //,
+                                   /*stdexec::set_error_t(int)*/>;
 
   template <typename Receiver>
   static operation_state<Receiver> connect(qthreads_sender &&s,
                                            Receiver &&receiver) {
-    return {std::forward<Receiver>(receiver)};
+    return operation_state<Receiver>{std::forward<Receiver>(receiver)};
   }
 
   qthreads_env get_env() const noexcept { return {}; }
@@ -227,8 +227,8 @@ struct qthreads_func_sender {
   // from the underlying qthread.
   using completion_signatures =
     stdexec::completion_signatures<stdexec::set_value_t(aligned_t),
-                                   stdexec::set_stopped_t(),
-                                   stdexec::set_error_t(int)>;
+                                   stdexec::set_stopped_t() //,
+                                   /*stdexec::set_error_t(int)*/>;
 
   template <typename Receiver>
   static extended_operation_state<Func, Arg, Receiver>
@@ -245,23 +245,99 @@ struct qthreads_func_sender {
 
 qthreads_sender qthreads_scheduler::schedule() const noexcept { return {}; }
 
+// Sender and receiver types for our customization of stdexec::then.
+// Adapted from the then implementation in their examples directory.
+template <class R, class F>
+class qthreads_then_receiver :
+  public stdexec::receiver_adaptor<qthreads_then_receiver<R, F>, R> {
+  template <class... As>
+  using _completions =
+    stdexec::completion_signatures<stdexec::set_value_t(
+                                     std::invoke_result_t<F, As...>),
+                                   stdexec::set_error_t(std::exception_ptr)>;
+public:
+  qthreads_then_receiver(R r, F f_):
+    stdexec::receiver_adaptor<qthreads_then_receiver, R>{std::move(r)},
+    f(std::move(f_)) {}
+
+  // Customize set_value by invoking the callable and passing the result to the
+  // inner receiver
+  template <class... As>
+    requires stdexec::receiver_of<R, _completions<As...>>
+  void set_value(As &&...as) && noexcept {
+    try {
+      stdexec::set_value(
+        std::move(*this).base(),
+        std::invoke(static_cast<F &&>(f), static_cast<As &&>(as)...));
+    } catch (...) {
+      stdexec::set_error(std::move(*this).base(), std::current_exception());
+    }
+  }
+private:
+  F f;
+};
+
+template <stdexec::sender S, class F>
+struct qthreads_then_sender {
+  using sender_concept = stdexec::sender_t;
+
+  S s;
+  F f;
+
+  /*// Compute the completion signatures
+  template <class... Args>
+  using set_value_t =
+    stdexec::completion_signatures<stdexec::set_value_t(std::invoke_result_t<F,
+  Args...>)>;
+
+  template <class Env>
+  using completions_t = stdexec::transform_completion_signatures_of<
+    S,
+    Env,
+    stdexec::completion_signatures<stdexec::set_error_t(std::exception_ptr)>,
+    set_value_t
+  >;
+
+  template <class Env>
+  auto get_completion_signatures(Env&&) && -> completions_t<Env> {
+    return {};
+  }*/
+  using completion_signatures =
+    stdexec::completion_signatures<stdexec::set_value_t(int),
+                                   stdexec::set_error_t(std::exception_ptr)>;
+
+  // Connect:
+  template <stdexec::receiver R>
+  // requires stdexec::sender_to<S, qthreads_then_receiver<R, F>>
+  auto connect(R r) && {
+    // No additional data needed in the operation state, so just
+    // connect the wrapped sender to the qthreads_then_receiver which
+    // actually wraps the provided function.
+    return stdexec::connect(
+      static_cast<S &&>(s),
+      qthreads_then_receiver<R, F>{static_cast<R &&>(r), static_cast<F &&>(f)});
+  }
+
+  auto get_env() const noexcept -> decltype(auto) {
+    return stdexec::get_env(s);
+  }
+
+  friend qthreads_domain tag_invoke(stdexec::get_domain_t const,
+                                    qthreads_then_sender const &) noexcept;
+};
+
+template <stdexec::sender S, class F>
+auto qthreads_then(S s, F f) -> stdexec::sender auto {
+  return qthreads_then_sender<S, F>{static_cast<S &&>(s), static_cast<F &&>(f)};
+}
+
 template <>
 struct transform_sender_for<stdexec::then_t> {
   template <class Fn, class /*qthreads sender concept needed here?*/ Sender>
-  auto &&operator()(stdexec::__ignore, Fn fun, Sender &&sndr) const {
+  auto operator()(stdexec::__ignore, Fn fun, Sender &&sndr) const {
     // fun is already the invocable we want to wrap.
     // It's already been extracted from inside the default "then".
-    // The wrest of this nonsense just has to do with constructing a
-    // new customized "then" sender that wraps the old one.
-    // Note: stdexec::__decay_t is supposedly equivalent to std::decay_t
-    // but more efficient. Try swapping in the standard one later.
-    static_assert(
-      0,
-      "inside transform_sender_for, correct override but not implemented yet.");
-    // using sender_t =
-    // stdexec::__t<then_sender_t<stdexec::__id<stdexec::__decay_t<Sender>>,
-    // Fn>>; return sender_t{{}, static_cast<Sender&&>(sndr),
-    // static_cast<Fn&&>(fun)};
+    return qthreads_then(sndr, fun);
   }
 };
 
@@ -314,6 +390,29 @@ struct apply_sender_for<stdexec::sync_wait_t> {
     qthread_readFF(&r, &op.feb);
     return result;
   }
+
+  template <stdexec::sender S, class F>
+  auto operator()(qthreads_then_sender<S, F> &&sn) {
+    stdexec::__sync_wait::__state __local_state{};
+    std::optional<
+      stdexec::__sync_wait::__sync_wait_result_t<qthreads_then_sender<S, F>>>
+      result{};
+
+    // Launch the sender with a continuation that will fill in the __result
+    // optional or set the exception_ptr in __local_state.
+    [[maybe_unused]]
+    auto op = stdexec::connect(
+      std::move(sn),
+      stdexec::__sync_wait::__receiver_t<qthreads_then_sender<S, F>>{
+        &__local_state, &result});
+    stdexec::start(op);
+
+    // Wait for the variant to be filled in.
+
+    aligned_t r;
+    qthread_readFF(&r, &op.feb);
+    return result;
+  }
 };
 
 template <typename... Env>
@@ -340,6 +439,12 @@ qthreads_domain tag_invoke(stdexec::get_domain_t const,
 template <typename Func, typename Arg>
 qthreads_domain tag_invoke(stdexec::get_domain_t const,
                            qthreads_func_sender<Func, Arg> const &) noexcept {
+  return {};
+}
+
+template <stdexec::sender S, class F>
+qthreads_domain tag_invoke(stdexec::get_domain_t const,
+                           qthreads_then_sender<S, F> const &) noexcept {
   return {};
 }
 

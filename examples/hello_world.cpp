@@ -23,21 +23,21 @@ auto main() -> int {
   */
   // TODO: multi-shot sender API should mean that the hello shows up twice.
   // currently it's showing three times, so we need to fix that.
-  ///*
   auto val1 =
     stdexec::sync_wait(stdexec::schedule(stdexx::qthreads_scheduler{})).value();
   stdexec::sender auto snd1 = stdexec::schedule(stdexx::qthreads_scheduler{});
   auto val2 = stdexec::sync_wait(std::move(snd1)).value();
   std::cout << "values from default sender from qthreads scheduler: "
             << std::get<0>(val1) << ", " << std::get<0>(val2) << std::endl;
-  //*/
 
-  // stdexec::sender auto then =
-  //   stdexec::schedule(stdexx::qthreads_scheduler{}) |
-  //   stdexec::then([]() { std::cout << "hello from then" << std::endl; });
-  // stdexec::sync_wait(std::move(then));
+  stdexec::sender auto then = stdexec::schedule(stdexx::qthreads_scheduler{}) |
+                              stdexec::then([](aligned_t val) {
+                                std::cout << "hello from then: " << val
+                                          << std::endl;
+                                return 1;
+                              });
+  stdexec::sync_wait(std::move(then));
 
-  ///*
   auto val3 = stdexec::sync_wait(
                 stdexx::qthreads_func_sender<decltype(&test_func), aligned_t>(
                   &test_func, 4ull))
@@ -47,7 +47,6 @@ auto main() -> int {
   auto val4 = stdexec::sync_wait(std::move(snd2)).value();
   std::cout << "values from qthreads func sender: " << std::get<0>(val3) << ", "
             << std::get<0>(val4) << std::endl;
-  //*/
 
   stdexx::finalize();
   return 0;
