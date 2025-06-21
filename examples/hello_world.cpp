@@ -57,6 +57,12 @@ auto main() -> int {
       std::cout << "then after just sender: " << val << std::endl;
     }));
 
+  stdexec::sync_wait(stdexx::qthreads_basic_func_sender([]() { return 5; }) |
+                     stdexec::then([](auto val) {
+                       std::cout << "then after basic func sender: " << val
+                                 << std::endl;
+                     }));
+
   stdexx::finalize();
   return 0;
 }
