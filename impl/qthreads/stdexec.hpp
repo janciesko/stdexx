@@ -21,6 +21,8 @@ struct qthreads_domain;
 struct qthreads_scheduler;
 struct qthreads_env;
 struct qthreads_sender;
+template <typename Val>
+struct qthreads_just_sender;
 template <typename Func, typename Arg>
 struct qthreads_func_sender;
 
@@ -122,6 +124,43 @@ struct operation_state {
   }
 };
 
+template <typename Val, typename Receiver>
+struct just_operation_state {
+  Val val;
+  aligned_t feb;
+  [[no_unique_address]] std::decay_t<Receiver> receiver;
+
+  template <typename Receiver_>
+  just_operation_state(Val &&v, Receiver_ &&receiver):
+    val(v), feb(0u), receiver(std::forward<Receiver_>(receiver)) {}
+
+  just_operation_state(just_operation_state &&) = delete;
+  just_operation_state(just_operation_state const &) = delete;
+  just_operation_state &operator=(just_operation_state &&) = delete;
+  just_operation_state &operator=(just_operation_state const &) = delete;
+
+  static aligned_t task(void *jos_void) noexcept {
+    // TODO: we can probably forward C++ exceptions out of here. Figure out
+    // how.
+    just_operation_state *jos =
+      reinterpret_cast<just_operation_state *>(jos_void);
+    stdexec::set_value(std::move(jos->receiver), std::move(jos->val));
+    return 0u;
+  }
+
+  inline void start() noexcept {
+    auto st = stdexec::get_stop_token(stdexec::get_env(receiver));
+    if (st.stop_requested()) {
+      stdexec::set_stopped(std::move(receiver));
+      return;
+    }
+    int r = qthread_fork(&task, this, &feb);
+    if (r != QTHREAD_SUCCESS) {
+      stdexec::set_error(std::move(this->receiver), r);
+    }
+  }
+};
+
 template <typename Func, typename Arg, typename Receiver>
 struct extended_operation_state {
   Func func;
@@ -198,6 +237,31 @@ struct qthreads_sender {
 
   friend qthreads_domain tag_invoke(stdexec::get_domain_t const,
                                     qthreads_sender const &) noexcept;
+};
+
+template <typename Val>
+struct qthreads_just_sender {
+  using is_sender = void;
+
+  Val val;
+
+  qthreads_just_sender(Val &&v) noexcept: val(v) {}
+
+  using completion_signatures =
+    stdexec::completion_signatures<stdexec::set_value_t(Val &&),
+                                   stdexec::set_stopped_t(),
+                                   stdexec::set_error_t(int)>;
+
+  template <typename Receiver>
+  static just_operation_state<Val, Receiver> connect(qthreads_just_sender &&s,
+                                                     Receiver &&receiver) {
+    return {std::move(s.val), std::forward<Receiver>(receiver)};
+  }
+
+  qthreads_env get_env() const noexcept { return {}; }
+
+  friend qthreads_domain tag_invoke(stdexec::get_domain_t const,
+                                    qthreads_just_sender const &) noexcept;
 };
 
 template <typename Func, typename Arg>
@@ -418,6 +482,29 @@ struct apply_sender_for<stdexec::sync_wait_t> {
     return result;
   }
 
+  template <typename Val>
+  auto operator()(qthreads_just_sender<Val> &&sn) {
+    stdexec::__sync_wait::__state __local_state{};
+    std::optional<
+      stdexec::__sync_wait::__sync_wait_result_t<qthreads_just_sender<Val>>>
+      result{};
+
+    // Launch the sender with a continuation that will fill in the __result
+    // optional or set the exception_ptr in __local_state.
+    [[maybe_unused]]
+    auto op = stdexec::connect(
+      std::move(sn),
+      stdexec::__sync_wait::__receiver_t<qthreads_just_sender<Val>>{
+        &__local_state, &result});
+    stdexec::start(op);
+
+    // Wait for the variant to be filled in.
+
+    aligned_t r;
+    qthread_readFF(&r, &op.feb);
+    return result;
+  }
+
   template <typename Func, typename Arg>
   auto operator()(qthreads_func_sender<Func, Arg> &&sn) {
     stdexec::__sync_wait::__state __local_state{};
@@ -481,6 +568,12 @@ qthreads_domain tag_invoke(stdexec::get_domain_t const,
 template <typename Func, typename Arg>
 qthreads_domain tag_invoke(stdexec::get_domain_t const,
                            qthreads_func_sender<Func, Arg> const &) noexcept {
+  return {};
+}
+
+template <typename Val>
+qthreads_domain tag_invoke(stdexec::get_domain_t const,
+                           qthreads_just_sender<Val> const &) noexcept {
   return {};
 }
 

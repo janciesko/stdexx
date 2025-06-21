@@ -48,8 +48,14 @@ auto main() -> int {
 
   stdexec::sync_wait(
     stdexx::qthreads_func_sender([](int val) { return val; }, 2) |
-    stdexec::then(
-      [](auto val) { std::cout << "then after func sender" << std::endl; }));
+    stdexec::then([](auto val) {
+      std::cout << "then after func sender: " << val << std::endl;
+    }));
+
+  stdexec::sync_wait(
+    stdexx::qthreads_just_sender(2) | stdexec::then([](auto val) {
+      std::cout << "then after just sender: " << val << std::endl;
+    }));
 
   stdexx::finalize();
   return 0;
