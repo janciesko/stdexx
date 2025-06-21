@@ -12,16 +12,17 @@ aligned_t test_func(aligned_t val) noexcept {
 
 auto main() -> int {
   stdexx::init();
-  /*
+
+  // Basic example:
   stdexec::sender auto begin = stdexec::schedule(stdexx::qthreads_scheduler{});
-  stdexec::sender auto hi_again = stdexec::then(begin, [](int i) {
+  stdexec::sender auto hi_again = stdexec::then(std::move(begin), []() {
     std::cout << "Hello world! Have an int.\n";
     return 13;
   });
-  auto val = stdexec::sync_wait(hi_again).value();
+  auto val = stdexec::sync_wait(std::move(hi_again)).value();
   std::cout << std::get<0>(val) << std::endl;
-  */
 
+  // A more complete set of usage examples:
   stdexec::sync_wait(
     stdexec::schedule(stdexx::qthreads_scheduler{}) | stdexec::then([]() {
       std::cout << "hello from a then lambda returning void" << std::endl;
