@@ -363,7 +363,8 @@ struct qthreads_then_sender {
     // No additional data needed in the operation state, so just
     // connect the wrapped sender to the qthreads_then_receiver which
     // actually wraps the provided function.
-    return std::move(s).connect(
+    return stdexec::connect(
+      std::move(s),
       qthreads_then_receiver<R, F>{static_cast<R &&>(r), static_cast<F &&>(f)});
   }
 

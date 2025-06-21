@@ -46,6 +46,11 @@ auto main() -> int {
   std::cout << "values from qthreads func sender: " << std::get<0>(val4) << ", "
             << std::get<0>(val5) << std::endl;
 
+  stdexec::sync_wait(
+    stdexx::qthreads_func_sender([](int val) { return val; }, 2) |
+    stdexec::then(
+      [](auto val) { std::cout << "then after func sender" << std::endl; }));
+
   stdexx::finalize();
   return 0;
 }
