@@ -21,12 +21,19 @@ auto main() -> int {
   auto val = stdexec::sync_wait(hi_again).value();
   std::cout << std::get<0>(val) << std::endl;
   */
+
   auto val1 =
     stdexec::sync_wait(stdexec::schedule(stdexx::qthreads_scheduler{})).value();
   stdexec::sender auto snd1 = stdexec::schedule(stdexx::qthreads_scheduler{});
   auto val2 = stdexec::sync_wait(std::move(snd1)).value();
   std::cout << "values from default sender from qthreads scheduler: "
             << std::get<0>(val1) << ", " << std::get<0>(val2) << std::endl;
+
+  stdexec::sync_wait(stdexec::schedule(stdexx::qthreads_scheduler{}) |
+                     stdexec::then([](aligned_t val) {
+                       std::cout << "hello from a then lambda returning void"
+                                 << std::endl;
+                     }));
 
   stdexec::sender auto then =
     stdexec::schedule(stdexx::qthreads_scheduler{}) |

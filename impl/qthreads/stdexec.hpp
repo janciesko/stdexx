@@ -118,11 +118,10 @@ struct operation_state {
       return;
     }
     int r = qthread_fork(&task, this, &feb);
-    assert(!r);
 
-    // if (r != QTHREAD_SUCCESS) {
-    //   stdexec::set_error(std::move(this->receiver), r);
-    // }
+    if (r != QTHREAD_SUCCESS) {
+      stdexec::set_error(std::move(this->receiver), r);
+    }
   }
 };
 
@@ -160,10 +159,9 @@ struct extended_operation_state {
       return;
     }
     int r = qthread_fork(&task, this, &feb);
-    assert(!r);
-    /*if (r != QTHREAD_SUCCESS) {
+    if (r != QTHREAD_SUCCESS) {
       stdexec::set_error(std::move(this->receiver), r);
-    }*/
+    }
   }
 };
 
@@ -195,8 +193,7 @@ struct qthreads_sender {
                                    stdexec::set_error_t(int)>;
 
   template <typename Receiver>
-  static operation_state<Receiver> connect(qthreads_sender &&s,
-                                           Receiver &&receiver) {
+  operation_state<Receiver> connect(Receiver &&receiver) && {
     return operation_state<Receiver>{std::forward<Receiver>(receiver)};
   }
 
@@ -245,16 +242,58 @@ struct qthreads_func_sender {
 
 qthreads_sender qthreads_scheduler::schedule() const noexcept { return {}; }
 
+template <bool returns_void>
+struct set_value_impl;
+
+template <>
+struct set_value_impl<true> {
+  template <typename Rec, typename Func, typename... Args>
+  static decltype(auto) impl(Rec &&rec, Func &&func, Args &&...args) {
+    std::invoke(std::move(func), static_cast<Args &&>(args)...);
+    stdexec::set_value(std::move(rec));
+  }
+};
+
+template <>
+struct set_value_impl<false> {
+  template <typename Rec, typename Func, typename... Args>
+  static decltype(auto) impl(Rec &&rec, Func &&func, Args &&...args) {
+    return stdexec::set_value(
+      std::move(rec),
+      std::invoke(static_cast<Func &&>(func), static_cast<Args &&>(args)...));
+  }
+};
+
+template <bool returns_void>
+struct then_completions;
+
+template <>
+struct then_completions<true> {
+  template <typename ret_t, typename... Args>
+  using completions =
+    stdexec::completion_signatures<stdexec::set_value_t(),
+                                   stdexec::set_error_t(std::exception_ptr)>;
+};
+
+template <>
+struct then_completions<false> {
+  template <typename ret_t, typename... Args>
+  using completions =
+    stdexec::completion_signatures<stdexec::set_value_t(ret_t),
+                                   stdexec::set_error_t(std::exception_ptr)>;
+};
+
 // Sender and receiver types for our customization of stdexec::then.
 // Adapted from the then implementation in their examples directory.
 template <class R, class F>
 class qthreads_then_receiver :
   public stdexec::receiver_adaptor<qthreads_then_receiver<R, F>, R> {
   template <class... As>
-  using _completions =
-    stdexec::completion_signatures<stdexec::set_value_t(
-                                     std::invoke_result_t<F, As...>),
-                                   stdexec::set_error_t(std::exception_ptr)>;
+  using ret_t =
+    std::invoke_result_t<decltype(std::move(std::declval<F>())), As...>;
+  template <typename... As>
+  using _completions = then_completions<std::is_same_v<ret_t<As...>, void>>::
+    template completions<ret_t<As...>, As...>;
 public:
   qthreads_then_receiver(R r, F f_):
     stdexec::receiver_adaptor<qthreads_then_receiver, R>{std::move(r)},
@@ -266,9 +305,8 @@ public:
     requires stdexec::receiver_of<R, _completions<As...>>
   void set_value(As &&...as) && noexcept {
     try {
-      stdexec::set_value(
-        std::move(*this).base(),
-        std::invoke(static_cast<F &&>(f), static_cast<As &&>(as)...));
+      set_value_impl<std::is_same_v<ret_t<As...>, void>>::impl(
+        std::move(*this).base(), std::move(f), static_cast<As &&>(as)...);
     } catch (...) {
       stdexec::set_error(std::move(*this).base(), std::current_exception());
     }
@@ -284,10 +322,31 @@ struct qthreads_then_sender {
   S s;
   F f;
 
-  // Compute the completion signatures
-  template <class... Args>
-  using set_value_t = stdexec::completion_signatures<stdexec::set_value_t(
-    std::invoke_result_t<F, Args...>)>;
+  template <typename... Args>
+  using ret_t = std::invoke_result_t<F, Args...>;
+
+  // The idiom used in the existing stdexec then example algorithm
+  // doesn't handle the void case in how it calls in to
+  // transform_completion_signatures_of. This is a workaround for that.
+  // TODO: is there a more graceful way to do this?
+  template <bool is_void, typename... Args>
+  struct set_value_signatures;
+
+  template <typename... Args>
+  struct set_value_signatures<true, Args...> {
+    using type = stdexec::completion_signatures<stdexec::set_value_t()>;
+  };
+
+  template <typename... Args>
+  struct set_value_signatures<false, Args...> {
+    using type =
+      stdexec::completion_signatures<stdexec::set_value_t(ret_t<Args...>)>;
+  };
+
+  static_assert(!std::is_same_v<int, void>);
+  template <typename... Args>
+  using set_value_t =
+    set_value_signatures<std::is_same_v<ret_t<Args...>, void>, Args...>::type;
 
   template <class Env>
   using completions_t = stdexec::transform_completion_signatures_of<
@@ -308,8 +367,7 @@ struct qthreads_then_sender {
     // No additional data needed in the operation state, so just
     // connect the wrapped sender to the qthreads_then_receiver which
     // actually wraps the provided function.
-    return stdexec::connect(
-      static_cast<S &&>(s),
+    return std::move(s).connect(
       qthreads_then_receiver<R, F>{static_cast<R &&>(r), static_cast<F &&>(f)});
   }
 
@@ -388,24 +446,16 @@ struct apply_sender_for<stdexec::sync_wait_t> {
 
   template <stdexec::sender S, class F>
   auto operator()(qthreads_then_sender<S, F> &&sn) {
-    stdexec::__sync_wait::__state __local_state{};
-    std::optional<
-      stdexec::__sync_wait::__sync_wait_result_t<qthreads_then_sender<S, F>>>
-      result{};
-
-    // Launch the sender with a continuation that will fill in the __result
-    // optional or set the exception_ptr in __local_state.
-    [[maybe_unused]]
+    using ret_t =
+      stdexec::__sync_wait::__sync_wait_result_t<qthreads_then_sender<S, F>>;
+    stdexec::__sync_wait::__state local_state{};
+    std::optional<ret_t> result{};
     auto op = stdexec::connect(
       std::move(sn),
       stdexec::__sync_wait::__receiver_t<qthreads_then_sender<S, F>>{
-        &__local_state, &result});
+        &local_state, &result});
     stdexec::start(op);
-
-    // Wait for the variant to be filled in.
-
-    aligned_t r;
-    qthread_readFF(&r, &op.feb);
+    qthread_readFF(NULL, &op.feb);
     return result;
   }
 };
