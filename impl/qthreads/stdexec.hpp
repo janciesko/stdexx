@@ -101,14 +101,11 @@ struct operation_state {
     // TODO: Call into a user-provided function pointer here instead.
     // TODO: How do we pipe the template parameters around to accomodate
     // different signatures (and return types) here?
-    std::cout << "Hello from qthreads in initial scheduling task! id = "
-              << qthread_id() << std::endl;
     // This call to set_value does the other work from a bunch of the
     // algorithms in stdexec. The simpler ones just recursively do their work
     // here.
-    aligned_t ret = 0u;
-    stdexec::set_value(std::move(os->receiver), ret);
-    return ret;
+    stdexec::set_value(std::move(os->receiver));
+    return 0u;
   }
 
   inline void start() noexcept {
@@ -188,7 +185,7 @@ struct qthreads_sender {
   // In this case we use the return value to expose the return value
   // from the underlying qthread.
   using completion_signatures =
-    stdexec::completion_signatures<stdexec::set_value_t(aligned_t),
+    stdexec::completion_signatures<stdexec::set_value_t(),
                                    stdexec::set_stopped_t(),
                                    stdexec::set_error_t(int)>;
 
