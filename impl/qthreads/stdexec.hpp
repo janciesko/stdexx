@@ -343,7 +343,6 @@ struct qthreads_then_sender {
       stdexec::completion_signatures<stdexec::set_value_t(ret_t<Args...>)>;
   };
 
-  static_assert(!std::is_same_v<int, void>);
   template <typename... Args>
   using set_value_t =
     set_value_signatures<std::is_same_v<ret_t<Args...>, void>, Args...>::type;
