@@ -20,6 +20,11 @@ void finalize() { qthread_finalize(); }
 struct qthreads_domain;
 struct qthreads_scheduler;
 struct qthreads_env;
+
+// TODO: Add base classes to unify the implementations for
+// the different qthreads senders and corresponding
+// operation states.
+
 struct qthreads_sender;
 template <typename Val>
 struct qthreads_just_sender;
