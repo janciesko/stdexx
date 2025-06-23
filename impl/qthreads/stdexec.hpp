@@ -89,161 +89,106 @@ struct qthreads_scheduler {
   qthreads_sender schedule() const noexcept;
 };
 
-template <typename Receiver>
-struct operation_state {
+template <typename Derived_Op_State, typename Receiver>
+struct qt_os_base {
   aligned_t feb;
-  [[no_unique_address]] std::decay_t<Receiver> receiver;
+  Receiver receiver;
 
   template <typename Receiver_>
-  operation_state(Receiver_ &&receiver):
-    feb(0u), receiver(std::forward<Receiver_>(receiver)) {}
+  qt_os_base(Receiver_ &&r): feb(0u), receiver(std::forward<Receiver_>(r)) {}
 
-  operation_state(operation_state &&) = delete;
-  operation_state(operation_state const &) = delete;
-  operation_state &operator=(operation_state &&) = delete;
-  operation_state &operator=(operation_state const &) = delete;
+  qt_os_base(qt_os_base &&) = delete;
+  qt_os_base(qt_os_base const &) = delete;
+  qt_os_base &operator=(qt_os_base &&) = delete;
+  qt_os_base &operator=(qt_os_base const &) = delete;
 
-  // This one's not a part of the stdexec standard.
-  // This is just the function that gets passed to qthread_fork.
+  inline void start() noexcept {
+    auto st = stdexec::get_stop_token(stdexec::get_env(receiver));
+    if (st.stop_requested()) {
+      stdexec::set_stopped(std::move(receiver));
+      return;
+    }
+    int r = qthread_fork(&Derived_Op_State::task, this, &feb);
+
+    if (r != QTHREAD_SUCCESS) {
+      stdexec::set_error(std::move(this->receiver), r);
+    }
+  }
+};
+
+template <typename Receiver>
+struct operation_state : qt_os_base<operation_state<Receiver>, Receiver> {
   static aligned_t task(void *arg) noexcept {
     auto *os = static_cast<operation_state *>(arg);
-    // TODO: Call into a user-provided function pointer here instead.
-    // TODO: How do we pipe the template parameters around to accomodate
-    // different signatures (and return types) here?
     // This call to set_value does the other work from a bunch of the
     // algorithms in stdexec. The simpler ones just recursively do their work
     // here.
     stdexec::set_value(std::move(os->receiver));
     return 0u;
   }
-
-  inline void start() noexcept {
-    auto st = stdexec::get_stop_token(stdexec::get_env(receiver));
-    if (st.stop_requested()) {
-      stdexec::set_stopped(std::move(receiver));
-      return;
-    }
-    int r = qthread_fork(&task, this, &feb);
-
-    if (r != QTHREAD_SUCCESS) {
-      stdexec::set_error(std::move(this->receiver), r);
-    }
-  }
 };
 
 template <typename Val, typename Receiver>
-struct just_operation_state {
+struct just_operation_state :
+  qt_os_base<just_operation_state<Val, Receiver>, Receiver> {
   Val val;
-  aligned_t feb;
-  [[no_unique_address]] std::decay_t<Receiver> receiver;
 
-  template <typename Receiver_>
-  just_operation_state(Val &&v, Receiver_ &&receiver):
-    val(v), feb(0u), receiver(std::forward<Receiver_>(receiver)) {}
+  template <typename Val_, typename Receiver_>
+  just_operation_state(Val_ &&v, Receiver_ &&receiver):
+    qt_os_base<just_operation_state<Val, Receiver>, Receiver>(
+      std::forward<Receiver_>(receiver)),
+    val(std::forward<Val_>(v)) {}
 
-  just_operation_state(just_operation_state &&) = delete;
-  just_operation_state(just_operation_state const &) = delete;
-  just_operation_state &operator=(just_operation_state &&) = delete;
-  just_operation_state &operator=(just_operation_state const &) = delete;
-
-  static aligned_t task(void *jos_void) noexcept {
-    // TODO: we can probably forward C++ exceptions out of here. Figure out
-    // how.
-    just_operation_state *jos =
-      reinterpret_cast<just_operation_state *>(jos_void);
-    stdexec::set_value(std::move(jos->receiver), std::move(jos->val));
+  static aligned_t task(void *os_void) noexcept {
+    just_operation_state *os =
+      reinterpret_cast<just_operation_state *>(os_void);
+    stdexec::set_value(std::move(os->receiver), std::move(os->val));
     return 0u;
-  }
-
-  inline void start() noexcept {
-    auto st = stdexec::get_stop_token(stdexec::get_env(receiver));
-    if (st.stop_requested()) {
-      stdexec::set_stopped(std::move(receiver));
-      return;
-    }
-    int r = qthread_fork(&task, this, &feb);
-    if (r != QTHREAD_SUCCESS) {
-      stdexec::set_error(std::move(this->receiver), r);
-    }
   }
 };
 
 template <typename Func, typename Arg, typename Receiver>
-struct extended_operation_state {
+struct func_operation_state :
+  qt_os_base<func_operation_state<Func, Arg, Receiver>, Receiver> {
   Func func;
   Arg arg;
-  aligned_t feb;
-  [[no_unique_address]] std::decay_t<Receiver> receiver;
 
-  template <typename Receiver_>
-  extended_operation_state(Func &&f, Arg &&a, Receiver_ &&receiver):
-    func(f), arg(a), feb(0u), receiver(std::forward<Receiver_>(receiver)) {}
+  template <typename Func_, typename Arg_, typename Receiver_>
+  func_operation_state(Func_ &&f, Arg_ &&a, Receiver_ &&receiver):
+    qt_os_base<func_operation_state<Func, Arg, Receiver>, Receiver>(
+      std::forward<Receiver_>(receiver)),
+    func(std::forward<Func_>(f)), arg(std::forward<Arg_>(a)) {}
 
-  extended_operation_state(extended_operation_state &&) = delete;
-  extended_operation_state(extended_operation_state const &) = delete;
-  extended_operation_state &operator=(extended_operation_state &&) = delete;
-  extended_operation_state &
-  operator=(extended_operation_state const &) = delete;
-
-  static aligned_t task(void *eos_void) noexcept {
+  static aligned_t task(void *os_void) noexcept {
     // TODO: we can probably forward C++ exceptions out of here. Figure out
     // how.
-    extended_operation_state *eos =
-      reinterpret_cast<extended_operation_state *>(eos_void);
-    aligned_t ret = (eos->func)(eos->arg);
-    stdexec::set_value(std::move(eos->receiver), ret);
+    func_operation_state *os =
+      reinterpret_cast<func_operation_state *>(os_void);
+    aligned_t ret = (os->func)(os->arg);
+    stdexec::set_value(std::move(os->receiver), ret);
     return ret;
-  }
-
-  inline void start() noexcept {
-    auto st = stdexec::get_stop_token(stdexec::get_env(receiver));
-    if (st.stop_requested()) {
-      stdexec::set_stopped(std::move(receiver));
-      return;
-    }
-    int r = qthread_fork(&task, this, &feb);
-    if (r != QTHREAD_SUCCESS) {
-      stdexec::set_error(std::move(this->receiver), r);
-    }
   }
 };
 
 template <typename Func, typename Receiver>
-struct basic_func_operation_state {
+struct basic_func_operation_state :
+  qt_os_base<basic_func_operation_state<Func, Receiver>, Receiver> {
   Func func;
-  aligned_t feb;
-  [[no_unique_address]] std::decay_t<Receiver> receiver;
 
-  template <typename Receiver_>
-  basic_func_operation_state(Func &&f, Receiver_ &&receiver):
-    func(f), feb(0u), receiver(std::forward<Receiver_>(receiver)) {}
+  template <typename Func_, typename Receiver_>
+  basic_func_operation_state(Func_ &&f, Receiver_ &&receiver):
+    qt_os_base<basic_func_operation_state<Func, Receiver>, Receiver>(
+      std::forward<Receiver_>(receiver)),
+    func(std::forward<Func_>(f)) {}
 
-  basic_func_operation_state(basic_func_operation_state &&) = delete;
-  basic_func_operation_state(basic_func_operation_state const &) = delete;
-  basic_func_operation_state &operator=(basic_func_operation_state &&) = delete;
-  basic_func_operation_state &
-  operator=(basic_func_operation_state const &) = delete;
-
-  static aligned_t task(void *eos_void) noexcept {
+  static aligned_t task(void *os_void) noexcept {
     // TODO: we can probably forward C++ exceptions out of here. Figure out
     // how.
-    basic_func_operation_state *eos =
-      reinterpret_cast<basic_func_operation_state *>(eos_void);
-    aligned_t ret = (eos->func)();
-    stdexec::set_value(std::move(eos->receiver), ret);
+    basic_func_operation_state *os =
+      reinterpret_cast<basic_func_operation_state *>(os_void);
+    aligned_t ret = (os->func)();
+    stdexec::set_value(std::move(os->receiver), ret);
     return ret;
-  }
-
-  inline void start() noexcept {
-    auto st = stdexec::get_stop_token(stdexec::get_env(receiver));
-    if (st.stop_requested()) {
-      stdexec::set_stopped(std::move(receiver));
-      return;
-    }
-    int r = qthread_fork(&task, this, &feb);
-    if (r != QTHREAD_SUCCESS) {
-      stdexec::set_error(std::move(this->receiver), r);
-    }
   }
 };
 
@@ -361,7 +306,7 @@ struct qthreads_func_sender {
                                    stdexec::set_error_t(int)>;
 
   template <typename Receiver>
-  static extended_operation_state<Func, Arg, Receiver>
+  static func_operation_state<Func, Arg, Receiver>
   connect(qthreads_func_sender &&s, Receiver &&receiver) {
     return {
       std::move(s.func), std::move(s.arg), std::forward<Receiver>(receiver)};
