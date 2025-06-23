@@ -41,8 +41,7 @@ struct on_qthreads_receiver {
 
   void set_value(int i) noexcept {
     std::cout << "work_and_done" << std::endl;
-    ex::sender auto work = ex::just(i) | work_;
-    ex::sender auto and_done = ex::then(work, [](aligned_t *feb) {
+    ex::sender auto and_done = ex::then(work_, [](aligned_t *feb) {
       qthread_readFF(NULL, feb);
       std::cout << "FEB:" << feb << std::endl;
     });
