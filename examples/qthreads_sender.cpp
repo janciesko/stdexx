@@ -100,11 +100,11 @@ auto main() -> int {
   /*Explicit use of custom senders*/
   stdexx::qthreads_context qthreads_context;
   stdexec::sender auto s1 =
-    then(stdexec::just(42), qthreads_context, sender_wrapper{task1,0});
+    then(stdexec::just(42), qthreads_context, sender_wrapper{task1, 0});
   stdexec::sender auto s2 =
-    then(stdexec::just(42), qthreads_context, sender_wrapper{task2,0});
+    then(stdexec::just(42), qthreads_context, sender_wrapper{task2, 0});
   auto val = stdexec::sync_wait(stdexec::when_all(s1, s2)).value();
-  //std::cout << std::get<0>(val) << std::endl;
+  // std::cout << std::get<0>(val) << std::endl;
 
   // Using sender_wrapper and sender_wrapper_receiver
   stdexec::sender auto s5 = sender_wrapper{task3};
@@ -126,4 +126,4 @@ auto main() -> int {}
 
 #else
 error "Not implemented."
-				#endif
+#endif
