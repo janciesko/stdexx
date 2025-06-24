@@ -58,16 +58,22 @@ struct qthreads_domain {
     // idioms to unpack the info from inside stdexec::then.
     // For now we're following that same pattern rather than chase
     // down the info manually.
-    // Is there even an established method in the spec for getting the
+    // TODO: is there even an established method in the spec for getting the
     // invocable back out of a sender adaptor?
     return stdexec::__sexpr_apply(static_cast<Sender &&>(sndr),
                                   transform_sender_for<Tag, Env...>{env...});
   }
 
+  // transform_sender gets called recursively until one of the senders
+  // returns something of its own type. We use this separate overload
+  // to cover that base case.
   template <typename Sn, typename... Env>
     requires is_qthreads_sender<Sn>
   auto &&transform_sender(Sn &&sndr, Env const &...env) const noexcept;
 
+  // The domain's apply_sender routine is used to implement
+  // customization of sync_wait. Here we're just forwarding
+  // to a separate template we'll fully define much later.
   template <class Tag, stdexec::sender Sender, class... Args>
     requires stdexec::__callable<apply_sender_for<Tag>, Sender, Args...>
   static auto apply_sender(Tag, Sender &&sndr, Args &&...args) {
@@ -76,6 +82,10 @@ struct qthreads_domain {
   }
 };
 
+// Scheduler type usable with stdexec APIs.
+// In our case it's mostly trivial since the qthreads scheduler
+// is a static thing that (of necessity) has to be initialized/deinitialized
+// elsewhere.
 struct qthreads_scheduler {
   constexpr qthreads_scheduler() = default;
 
@@ -93,6 +103,13 @@ struct qthreads_scheduler {
   qthreads_sender schedule() const noexcept;
 };
 
+// CRTP type used by the various operation states.
+// This implements the qthread_fork call and stores the FEB.
+// The associated qthread_readFF call happens during sync_wait
+// whenever waiting on an associated qthreads sender.
+// The types that subclass from this one provide a static
+// function that gets passed th qthread_fork as well as any
+// additional init/deinit they may need.
 template <typename Derived_Op_State, typename Receiver>
 struct qt_os_base {
   aligned_t feb;
@@ -120,18 +137,24 @@ struct qt_os_base {
   }
 };
 
+// Operation state for the case where we're just returning a sender
+// from stdexec::schedule(qthreads_scheduler()) that can then be used
+// to run other stuff inside the associated qthread using stdexec::then.
+// Note: stdexec algs like "then" do their work inside set_value,
+// so this is all that's needed.
 template <typename Receiver>
 struct operation_state : qt_os_base<operation_state<Receiver>, Receiver> {
   static aligned_t task(void *arg) noexcept {
     auto *os = static_cast<operation_state *>(arg);
-    // This call to set_value does the other work from a bunch of the
-    // algorithms in stdexec. The simpler ones just recursively do their work
-    // here.
     stdexec::set_value(std::move(os->receiver));
     return 0u;
   }
 };
 
+// Operation state for a qthreads sender type that behaves similarly
+// to stdexec::just. It contains a value and passes it to the
+// associated set_value call. It can be used to start a chain
+// of stdexec::then calls.
 template <typename Val, typename Receiver>
 struct just_operation_state :
   qt_os_base<just_operation_state<Val, Receiver>, Receiver> {
@@ -151,6 +174,11 @@ struct just_operation_state :
   }
 };
 
+// Operation state for a qthreads sender type that
+// encapsulates an invocable with an associated single argument.
+// TODO: multiple arguments? Thus far I got hung up on
+// some kind of issue preventing expanding parameter packs
+// as struct members.
 template <typename Func, typename Arg, typename Receiver>
 struct func_operation_state :
   qt_os_base<func_operation_state<Func, Arg, Receiver>, Receiver> {
@@ -174,6 +202,8 @@ struct func_operation_state :
   }
 };
 
+// Operation state for a simpler version of the previous
+// where there's no associated argument passed, just a bare function call.
 template <typename Func, typename Receiver>
 struct basic_func_operation_state :
   qt_os_base<basic_func_operation_state<Func, Receiver>, Receiver> {
@@ -196,6 +226,9 @@ struct basic_func_operation_state :
   }
 };
 
+// Associated env for all qthreads sender types.
+// TODO: why did they design the env to be distinct from the domain and
+// scheduler?
 struct qthreads_env {
   qthreads_scheduler get_completion_scheduler() const noexcept { return {}; }
 
@@ -203,6 +236,12 @@ struct qthreads_env {
                                     qthreads_env const &) noexcept;
 };
 
+// CRTP base class for various qthreads sender types.
+// This takes care of marking it as satisfying the
+// is_qthreads_sender concept (and the ordinary sender concept too).
+// It's also used to avoid having to deal with writing separate
+// customizations for then, sync_wait, get_env, get_domain, etc.
+// for each qthreads sender type.
 template <typename derived_qthreads_sender>
 struct qthreads_base_sender {
   using sender_concept = qthreads_sender_tag;
@@ -213,8 +252,8 @@ struct qthreads_base_sender {
                                     qthreads_sender const &) noexcept;
 };
 
-// sender type returned by stdexec::schedule in order to
-// start a chain of tasks on this qthreads_scheduler.
+// Qthreads sender type returned by stdexec::schedule in order to
+// start a chain of tasks on the qthreads_scheduler.
 struct qthreads_sender : qthreads_base_sender<qthreads_sender> {
   using completion_signatures =
     stdexec::completion_signatures<stdexec::set_value_t(),
@@ -227,6 +266,9 @@ struct qthreads_sender : qthreads_base_sender<qthreads_sender> {
   }
 };
 
+// Qthreads ender type wrapping a single value.
+// Note: the value is moved into this struct and will be moved
+// again into the operation state and then into the set_value call.
 template <typename Val>
 struct qthreads_just_sender : qthreads_base_sender<qthreads_just_sender<Val>> {
   Val val;
@@ -245,6 +287,9 @@ struct qthreads_just_sender : qthreads_base_sender<qthreads_just_sender<Val>> {
   }
 };
 
+// Qthreads sender type wrapping a bare function call.
+// Note: the func is moved into this struct and will be moved
+// again into the operation state.
 template <typename Func>
 struct qthreads_basic_func_sender :
   qthreads_base_sender<qthreads_basic_func_sender<Func>> {
@@ -264,6 +309,9 @@ struct qthreads_basic_func_sender :
   }
 };
 
+// Qthreads sender type wrapping a call to a function with an argument.
+// The func and arg are moved into this struct and will be moved into the
+// operation state.
 template <typename Func, typename Arg>
 struct qthreads_func_sender :
   qthreads_base_sender<qthreads_func_sender<Func, Arg>> {
@@ -285,8 +333,20 @@ struct qthreads_func_sender :
   }
 };
 
+// This provides the scheduler's customization for stdexec::schedule.
+// It just needs to be defined down here for order of definition reasons.
 qthreads_sender qthreads_scheduler::schedule() const noexcept { return {}; }
 
+// A helper type for our implementation of stdexec::then.
+// The example implementation of then in the stdexec repo
+// doesn't actually handle void return types correctly
+// in its templating idioms.
+// On the other hand, the actual implementation for stdexec::then
+// has a bunch of internal interface calls instead of just
+// using specified ones. This struct type exists as a templating
+// tool so we can compile the associated set_value call
+// after we've determined whether the invocable passed to
+// then returns void.
 template <bool returns_void>
 struct set_value_impl;
 
@@ -309,6 +369,9 @@ struct set_value_impl<false> {
   }
 };
 
+// Another helper type to generate the completion signatures
+// depending on whether the invocable passed to our "then" customization
+// returns void or not.
 template <bool returns_void>
 struct then_completions;
 
@@ -415,12 +478,15 @@ struct qthreads_then_sender : qthreads_base_sender<qthreads_then_sender<S, F>> {
   }
 };
 
+// Our transform_sender override calls into this for implementing stdexec::then.
 template <>
 struct transform_sender_for<stdexec::then_t> {
-  template <class Fn, class /*qthreads sender concept needed here?*/ Sender>
+  template <class Fn, class Sender>
+    requires is_qthreads_sender<Sender>
   auto operator()(stdexec::__ignore, Fn fun, Sender &&sndr) const {
     // fun is already the invocable we want to wrap.
     // It's already been extracted from inside the default "then".
+    // All we need to do here is construct the associated sender from it.
     return qthreads_then_sender<Sender, Fn>{
       {}, static_cast<Sender &&>(sndr), static_cast<Fn &&>(fun)};
   }
@@ -431,10 +497,13 @@ struct apply_sender_for<stdexec::sync_wait_t> {
   template <typename S>
   auto operator()(S &&sn);
 
+  // Our customization of stdexec::sync_wait calls into this.
+  // This is where most of the work for that happens.
   template <typename Sn>
     requires is_qthreads_sender<Sn>
   auto operator()(Sn &&sn) {
-    stdexec::__sync_wait::__state __local_state{};
+    // We're relying on some internal stuff from stdexec::sync_wait here.
+    stdexec::__sync_wait::__state local_state{};
     std::optional<stdexec::__sync_wait::__sync_wait_result_t<Sn>> result{};
 
     // Launch the sender with a continuation that will fill in the __result
@@ -442,15 +511,20 @@ struct apply_sender_for<stdexec::sync_wait_t> {
     [[maybe_unused]]
     auto op = stdexec::connect(
       std::move(sn),
-      stdexec::__sync_wait::__receiver_t<Sn>{&__local_state, &result});
+      stdexec::__sync_wait::__receiver_t<Sn>{&local_state, &result});
     stdexec::start(op);
 
-    aligned_t r;
-    qthread_readFF(&r, &op.feb);
+    // Wait on the FEB associated with the qthread.
+    // TODO: make a function call to get its address out of the
+    // operation state instead of accessing it directly.
+    // Currently this works for our override of stdexec::then,
+    // but there may be other stuff that requires the extra indirection.
+    qthread_readFF(NULL, &op.feb);
     return result;
   }
 };
 
+// Base case for transform_sender.
 template <typename Sn, typename... Env>
   requires is_qthreads_sender<Sn>
 auto &&qthreads_domain::transform_sender(Sn &&sndr,
@@ -458,6 +532,7 @@ auto &&qthreads_domain::transform_sender(Sn &&sndr,
   return std::move(sndr);
 }
 
+// Associate our various types with the qthreads_domain.
 // For some reason get_domain can currently only be specialized this way.
 // TODO: fix and/or report this upstream.
 // In theory adding get_domain as a method or using the query interface
