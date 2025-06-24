@@ -21,7 +21,12 @@ struct qthreads_domain;
 struct qthreads_scheduler;
 struct qthreads_env;
 
-// TODO: wrap the CRTP check for the base_sender base class into a concept.
+struct qthreads_sender_tag : stdexec::sender_t {};
+
+template <typename S>
+concept is_qthreads_sender =
+  std::derived_from<typename S::sender_concept, qthreads_sender_tag>;
+
 template <typename Der>
 struct qthreads_base_sender;
 struct qthreads_sender;
@@ -60,7 +65,7 @@ struct qthreads_domain {
   }
 
   template <typename Sn, typename... Env>
-    requires std::is_base_of_v<qthreads_base_sender<Sn>, Sn>
+    requires is_qthreads_sender<Sn>
   auto &&transform_sender(Sn &&sndr, Env const &...env) const noexcept;
 
   template <class Tag, stdexec::sender Sender, class... Args>
@@ -200,7 +205,7 @@ struct qthreads_env {
 
 template <typename derived_qthreads_sender>
 struct qthreads_base_sender {
-  using sender_concept = stdexec::sender_t;
+  using sender_concept = qthreads_sender_tag;
 
   qthreads_env get_env() const noexcept { return {}; }
 
@@ -432,7 +437,7 @@ struct apply_sender_for<stdexec::sync_wait_t> {
   auto operator()(S &&sn);
 
   template <typename Sn>
-    requires std::is_base_of_v<qthreads_base_sender<Sn>, Sn>
+    requires is_qthreads_sender<Sn>
   auto operator()(Sn &&sn) {
     stdexec::__sync_wait::__state __local_state{};
     std::optional<stdexec::__sync_wait::__sync_wait_result_t<Sn>> result{};
@@ -452,7 +457,7 @@ struct apply_sender_for<stdexec::sync_wait_t> {
 };
 
 template <typename Sn, typename... Env>
-  requires std::is_base_of_v<qthreads_base_sender<Sn>, Sn>
+  requires is_qthreads_sender<Sn>
 auto &&qthreads_domain::transform_sender(Sn &&sndr,
                                          Env const &...env) const noexcept {
   return std::move(sndr);
