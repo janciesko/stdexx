@@ -21,9 +21,7 @@ struct qthreads_domain;
 struct qthreads_scheduler;
 struct qthreads_env;
 
-// TODO: Add base classes to unify the implementations for
-// the different qthreads senders and corresponding
-// operation states.
+// TODO: wrap the CRTP check for the base_sender base class into a concept.
 template <typename Der>
 struct qthreads_base_sender;
 struct qthreads_sender;
