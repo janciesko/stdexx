@@ -200,7 +200,7 @@ struct qthreads_env {
 
 template <typename derived_qthreads_sender>
 struct qthreads_base_sender {
-  using is_sender = void;
+  using sender_concept = stdexec::sender_t;
 
   qthreads_env get_env() const noexcept { return {}; }
 
