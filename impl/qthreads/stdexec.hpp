@@ -415,19 +415,14 @@ struct qthreads_then_sender : qthreads_base_sender<qthreads_then_sender<S, F>> {
   }
 };
 
-template <stdexec::sender S, class F>
-auto qthreads_then(S s, F f) -> stdexec::sender auto {
-  return qthreads_then_sender<S, F>{
-    {}, static_cast<S &&>(s), static_cast<F &&>(f)};
-}
-
 template <>
 struct transform_sender_for<stdexec::then_t> {
   template <class Fn, class /*qthreads sender concept needed here?*/ Sender>
   auto operator()(stdexec::__ignore, Fn fun, Sender &&sndr) const {
     // fun is already the invocable we want to wrap.
     // It's already been extracted from inside the default "then".
-    return qthreads_then(sndr, fun);
+    return qthreads_then_sender<Sender, Fn>{
+      {}, static_cast<Sender &&>(sndr), static_cast<Fn &&>(fun)};
   }
 };
 
